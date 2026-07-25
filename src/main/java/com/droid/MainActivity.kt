@@ -8,9 +8,11 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.droid.bharatchat.UserProfileManager
 import com.droid.mesh.BluetoothMeshService
 
 class MainActivity : AppCompatActivity() {
@@ -31,8 +33,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(50, 50, 50, 50)
         }
 
+        // Display current local username on dashboard
+        val myName = UserProfileManager.getMyUsername(this)
         statusTextView = TextView(this).apply {
-            text = "Welcome to BharatChat\nOffline Mesh Status: Idle"
+            text = "Welcome to BharatChat ($myName)\nOffline Mesh Status: Idle"
             textSize = 18f
             setPadding(0, 0, 0, 40)
         }
@@ -58,13 +62,42 @@ class MainActivity : AppCompatActivity() {
         val chatButton = Button(this).apply {
             text = "Launch Matrix Chat"
             setOnClickListener {
-                val intent = Intent(this@MainActivity, ChatActivity::class.java)
-                startActivity(intent)
+                showPeerSelectionDialog()
             }
         }
         layout.addView(chatButton)
 
         setContentView(layout)
+    }
+
+    private fun showPeerSelectionDialog() {
+        // Fetch active peers discovered by the mesh service scan engine
+        val activePeers = meshService.getDiscoveredPeerNames()
+
+        if (activePeers.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("No Active Peers Found")
+                .setMessage("Make sure the mesh node is started, or use 'Open Pairing QR Hub' to connect with a nearby device first.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val peersArray = activePeers.toTypedArray<CharSequence>()
+        AlertDialog.Builder(this)
+            .setTitle("Select Peer to Chat")
+            .setItems(peersArray) { _, which ->
+                val selectedPeer = peersArray[which].toString()
+                openChatWithUser(selectedPeer)
+            }
+            .show()
+    }
+
+    private fun openChatWithUser(peerName: String) {
+        val intent = Intent(this, ChatActivity::class.java).apply {
+            putExtra("TARGET_PEER", peerName)
+        }
+        startActivity(intent)
     }
 
     private fun checkPermissionsAndStart() {
@@ -94,7 +127,8 @@ class MainActivity : AppCompatActivity() {
     private fun startMeshOperations() {
         meshService.startAdvertising()
         meshService.startScanning()
-        statusTextView.text = "Welcome to BharatChat\nOffline Mesh Status: Active (Scanning & Advertising)"
+        val myName = UserProfileManager.getMyUsername(this)
+        statusTextView.text = "Welcome to BharatChat ($myName)\nOffline Mesh Status: Active (Scanning & Advertising)"
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

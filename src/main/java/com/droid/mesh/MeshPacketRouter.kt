@@ -7,11 +7,45 @@ import java.util.LinkedHashMap
 data class MeshPacket(
     val messageId: String,
     val senderId: String,
+    val recipientId: String,
     var ttl: Int,
     val encryptedPayload: String
-)
+) {
+    /**
+     * Serializes the packet into a byte array for BLE transmission.
+     */
+    fun serialize(): ByteArray {
+        val raw = "ID:$messageId|FROM:$senderId|TO:$recipientId|TTL:$ttl|MSG:$encryptedPayload"
+        return raw.toByteArray(Charsets.UTF_8)
+    }
+
+    companion object {
+        /**
+         * Deserializes raw incoming BLE bytes back into a MeshPacket.
+         */
+        fun deserialize(bytes: ByteArray): MeshPacket? {
+            try {
+                val raw = String(bytes, Charsets.UTF_8)
+                val parts = raw.split("|")
+                if (parts.size < 5) return null
+
+                val messageId = parts[0].removePrefix("ID:")
+                val senderId = parts[1].removePrefix("FROM:")
+                val recipientId = parts[2].removePrefix("TO:")
+                val ttl = parts[3].removePrefix("TTL:").toIntOrNull() ?: 7
+                val encryptedPayload = parts[4].removePrefix("MSG:")
+
+                return MeshPacket(messageId, senderId, recipientId, ttl, encryptedPayload)
+            } catch (e: Exception) {
+                Log.e("MeshPacket", "Failed to deserialize packet bytes", e)
+                return null
+            }
+        }
+    }
+}
 
 class MeshPacketRouter(
+    private val currentUserId: String,
     private val onMessageReadyToDeliver: (MeshPacket) -> Unit,
     private val onPacketRelay: (MeshPacket) -> Unit
 ) {
@@ -43,16 +77,18 @@ class MeshPacketRouter(
         // Mark as seen with current timestamp
         seenCache[packet.messageId] = System.currentTimeMillis()
 
-        // 2. Check if packet is intended for us or needs to be relayed
+        // 2. Check TTL expiration
         if (packet.ttl <= 0) {
             Log.w(TAG, "Packet expired (TTL reached 0): ${packet.messageId}")
             return
         }
 
-        // Trigger local delivery/decryption handler
-        onMessageReadyToDeliver(packet)
+        // 3. Deliver if intended for us or if it is a broadcast/target match
+        if (packet.recipientId == currentUserId || packet.recipientId == "BROADCAST" || packet.recipientId == "Unknown_Peer") {
+            onMessageReadyToDeliver(packet)
+        }
 
-        // 3. Multi-hop Relay decrementing TTL
+        // 4. Multi-hop Relay decrementing TTL (relay for others if TTL allows)
         if (packet.ttl > 1) {
             packet.ttl -= 1
             Log.d(TAG, "Relaying packet ${packet.messageId} with new TTL: ${packet.ttl}")
@@ -63,10 +99,11 @@ class MeshPacketRouter(
     /**
      * Creates a fresh outgoing packet ready for multi-hop mesh broadcast.
      */
-    fun createOutgoingPacket(messageId: String, senderId: String, encryptedPayload: String): MeshPacket {
+    fun createOutgoingPacket(messageId: String, senderId: String, recipientId: String, encryptedPayload: String): MeshPacket {
         val packet = MeshPacket(
             messageId = messageId,
             senderId = senderId,
+            recipientId = recipientId,
             ttl = INITIAL_TTL,
             encryptedPayload = encryptedPayload
         )

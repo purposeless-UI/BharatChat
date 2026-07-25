@@ -1,10 +1,10 @@
 package com.droid.crypto
 
 import android.util.Base64
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -12,12 +12,15 @@ object PresenceTagEngine {
     private const val HMAC_ALGORITHM = "HmacSHA256"
 
     /**
-     * Computes a rotating daily presence tag for a given contact secret.
+     * Computes a rotating daily presence tag for a given contact secret using UTC time window.
      * This allows paired peers to recognize each other during a Bluetooth scan 
      * without exposing static keys or identifiers to strangers.
      */
     fun generateDailyPresenceTag(contactSharedSecret: ByteArray): String {
-        val dateString = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val dateString = dateFormat.format(Date())
         val timeContext = dateString.toByteArray(Charsets.UTF_8)
 
         val mac = Mac.getInstance(HMAC_ALGORITHM)

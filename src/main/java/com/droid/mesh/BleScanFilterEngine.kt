@@ -1,7 +1,6 @@
 package com.droid.mesh
 
 import android.bluetooth.le.ScanResult
-import android.os.ParcelUuid
 import android.util.Log
 import com.droid.crypto.PresenceTagEngine
 import java.util.UUID
@@ -14,11 +13,21 @@ class BleScanFilterEngine(
         private const val TAG = "BleScanFilterEngine"
     }
 
+    private val discoveredPeerNames = mutableSetOf<String>()
+
+    /**
+     * Data class to hold both the verified device address and its name for chat selection.
+     */
+    data class VerifiedPeer(
+        val deviceAddress: String,
+        val deviceName: String?
+    )
+
     /**
      * Inspects a raw BLE scan result. If it broadcasts our application service UUID
-     * and carries a matching contact presence tag, it returns the verified device address.
+     * and carries a matching contact presence tag, it returns the verified peer details.
      */
-    fun processScanResult(result: ScanResult): String? {
+    fun processScanResult(result: ScanResult): VerifiedPeer? {
         val record = result.scanRecord ?: return null
         val serviceUuids = record.serviceUuids
         
@@ -31,7 +40,6 @@ class BleScanFilterEngine(
         // 2. Extract manufacturer data or service data containing the presence tag
         val manufacturerData = record.manufacturerSpecificData
         if (manufacturerData != null && manufacturerData.size() > 0) {
-            // Read custom byte payloads if embedded in manufacturer fields
             for (i in 0 until manufacturerData.size()) {
                 val companyId = manufacturerData.keyAt(i)
                 val dataBytes = manufacturerData.get(companyId)
@@ -41,13 +49,28 @@ class BleScanFilterEngine(
                     // 3. Match against trusted local contacts
                     val knownSecrets = getKnownContactSecrets()
                     if (PresenceTagEngine.matchesAnyContact(scannedTagString, knownSecrets)) {
-                        Log.d(TAG, "Successfully verified paired contact at address: ${result.device.address}")
-                        return result.device.address
+                        val address = result.device.address
+                        val name = record.deviceName ?: "Peer_${address.takeLast(5)}"
+                        
+                        discoveredPeerNames.add(name)
+                        Log.d(TAG, "Successfully verified paired contact: $name at address: $address")
+                        return VerifiedPeer(deviceAddress = address, deviceName = name)
                     }
                 }
             }
         }
 
+        // Fallback: If it's a target mesh node even without strict presence tags, add to list
+        val fallbackName = record.deviceName ?: "Peer_${result.device.address.takeLast(5)}"
+        discoveredPeerNames.add(fallbackName)
+
         return null
+    }
+
+    /**
+     * Returns all unique discovered peer names for UI display.
+     */
+    fun getDiscoveredPeersList(): List<String> {
+        return discoveredPeerNames.toList()
     }
 }

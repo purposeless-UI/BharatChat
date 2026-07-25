@@ -1,6 +1,7 @@
 package com.droid.mesh
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
@@ -20,7 +21,8 @@ import java.util.UUID
 class BluetoothMeshService(
     private val context: Context,
     private val getMyCurrentSecret: () -> ByteArray? = { null },
-    private val getKnownContactSecrets: () -> List<ByteArray> = { emptyList() }
+    private val getKnownContactSecrets: () -> List<ByteArray> = { emptyList() },
+    private val onPacketReceived: ((ByteArray) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "BluetoothMeshService"
@@ -53,29 +55,42 @@ class BluetoothMeshService(
     }
 
     private val scanCallback = object : ScanCallback() {
+        @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             super.onScanResult(callbackType, result)
-            result?.let {
-                // Check if the peer matches a paired contact via presence tags, 
-                // or fallback to logging standard broadcast info if un-gated.
-                val verifiedAddress = scanFilterEngine.processScanResult(it)
-                if (verifiedAddress != null) {
-                    Log.d(TAG, "Verified Paired BharatChat Peer Found: $verifiedAddress")
+            result?.let { scanResult ->
+                val verifiedPeer = scanFilterEngine.processScanResult(scanResult)
+                if (verifiedPeer != null) {
+                    Log.d(TAG, "Verified Paired BharatChat Peer Found: ${verifiedPeer.deviceName} at ${verifiedPeer.deviceAddress}")
                 } else {
                     val deviceName = if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-                        it.device.name ?: "Unknown Peer"
+                        scanResult.device.name ?: "Unknown Peer"
                     } else {
                         "Unknown Peer"
                     }
-                    Log.d(TAG, "Discovered general device: $deviceName (${it.device.address})")
+                    Log.d(TAG, "Discovered general device: $deviceName (${scanResult.device.address})")
+                }
+
+                scanResult.scanRecord?.getManufacturerSpecificData(MFR_ID)?.let { payloadBytes ->
+                    if (payloadBytes.isNotEmpty()) {
+                        onPacketReceived?.invoke(payloadBytes)
+                    }
                 }
             }
+        }
+
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
+            results?.forEach { onScanResult(0, it) }
         }
 
         override fun onScanFailed(errorCode: Int) {
             super.onScanFailed(errorCode)
             Log.e(TAG, "BLE Mesh Scanning failed with error code: $errorCode")
         }
+    }
+
+    fun getDiscoveredPeerNames(): List<String> {
+        return scanFilterEngine.getDiscoveredPeersList()
     }
 
     fun startAdvertising() {
@@ -96,10 +111,9 @@ class BluetoothMeshService(
             .build()
 
         val dataBuilder = AdvertiseData.Builder()
-            .setIncludeDeviceName(false) // Hide real device name for privacy
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(MESH_SERVICE_UUID))
 
-        // Embed rotating daily presence tag if a secret is provided
         val mySecret = getMyCurrentSecret()
         if (mySecret != null) {
             val dailyTagString = PresenceTagEngine.generateDailyPresenceTag(mySecret)
@@ -108,6 +122,50 @@ class BluetoothMeshService(
         }
 
         bleAdvertiser?.startAdvertising(settings, dataBuilder.build(), advertiseCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun transmitPacket(packetBytes: ByteArray): Boolean {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            Log.w(TAG, "Bluetooth is disabled. Cannot transmit packet.")
+            return false
+        }
+
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Missing BLUETOOTH_ADVERTISE permission for transmission.")
+            return false
+        }
+
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setConnectable(false)
+            .setTimeout(500)
+            .build()
+
+        val data = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addServiceUuid(ParcelUuid(MESH_SERVICE_UUID))
+            .addManufacturerData(MFR_ID, packetBytes)
+            .build()
+
+        bleAdvertiser?.startAdvertising(settings, data, object : AdvertiseCallback() {
+            override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+                super.onStartSuccess(settingsInEffect)
+                android.os.Handler(context.mainLooper).postDelayed({
+                    try {
+                        bleAdvertiser.stopAdvertising(this)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to stop broadcast burst", e)
+                    }
+                }, 400)
+            }
+            override fun onStartFailure(errorCode: Int) {
+                super.onStartFailure(errorCode)
+                Log.e(TAG, "Packet broadcast advertisement failed: $errorCode")
+            }
+        })
+
+        return true
     }
 
     fun startScanning() {
@@ -129,11 +187,15 @@ class BluetoothMeshService(
     fun stopAll() {
         if (bluetoothAdapter?.isEnabled == true) {
             if (isAdvertising && ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED) {
-                bleAdvertiser?.stopAdvertising(advertiseCallback)
+                try {
+                    bleAdvertiser?.stopAdvertising(advertiseCallback)
+                } catch (_: Exception) {}
                 isAdvertising = false
             }
             if (isScanning && ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED) {
-                bleScanner?.stopScan(scanCallback)
+                try {
+                    bleScanner?.stopScan(scanCallback)
+                } catch (_: Exception) {}
                 isScanning = false
             }
         }
