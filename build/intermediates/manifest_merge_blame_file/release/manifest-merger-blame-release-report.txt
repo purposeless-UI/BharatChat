@@ -1,0 +1,275 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.droid.bharatchat"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="34" />
+10
+11    <uses-permission
+11-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:5:5-95
+12        android:name="android.permission.BLUETOOTH"
+12-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:5:22-65
+13        android:maxSdkVersion="30" />
+13-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:5:66-92
+14    <uses-permission
+14-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:6:5-101
+15        android:name="android.permission.BLUETOOTH_ADMIN"
+15-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:6:22-71
+16        android:maxSdkVersion="30" />
+16-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:6:72-98
+17    <uses-permission
+17-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:7:5-9:31
+18        android:name="android.permission.BLUETOOTH_SCAN"
+18-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:7:22-70
+19        android:usesPermissionFlags="neverForLocation" />
+19-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:8:9-55
+20    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+20-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:10:5-78
+20-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:10:22-75
+21    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+21-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:11:5-76
+21-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:11:22-73
+22    <uses-permission
+22-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:12:5-106
+23        android:name="android.permission.ACCESS_FINE_LOCATION"
+23-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:12:22-76
+24        android:maxSdkVersion="30" />
+24-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:12:77-103
+25    <uses-permission
+25-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:13:5-108
+26        android:name="android.permission.ACCESS_COARSE_LOCATION"
+26-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:13:22-78
+27        android:maxSdkVersion="30" />
+27-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:13:79-105
+28
+29    <uses-feature
+29-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:15:5-90
+30        android:name="android.hardware.bluetooth_le"
+30-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:15:19-63
+31        android:required="true" />
+31-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:15:64-87
+32
+33    <permission
+33-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
+34        android:name="com.droid.bharatchat.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+34-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
+35        android:protectionLevel="signature" />
+35-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
+36
+37    <uses-permission android:name="com.droid.bharatchat.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+37-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
+37-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
+38    <uses-permission android:name="android.permission.CAMERA" /> <!-- Don't require camera, as this requires a rear camera. This allows it to work on the Nexus 7 -->
+38-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:22:5-65
+38-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:22:22-62
+39    <uses-feature
+39-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:25:5-27:36
+40        android:name="android.hardware.camera"
+40-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:26:9-47
+41        android:required="false" />
+41-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:27:9-33
+42    <uses-feature
+42-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:28:5-30:36
+43        android:name="android.hardware.camera.front"
+43-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:29:9-53
+44        android:required="false" /> <!-- TODO replace above two with next line after Android 4.2 -->
+44-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:30:9-33
+45    <!-- <uses-feature android:name="android.hardware.camera.any"/> -->
+46    <uses-feature
+46-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:33:5-35:36
+47        android:name="android.hardware.camera.autofocus"
+47-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:34:9-57
+48        android:required="false" />
+48-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:35:9-33
+49    <uses-feature
+49-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:36:5-38:36
+50        android:name="android.hardware.camera.flash"
+50-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:37:9-53
+51        android:required="false" />
+51-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:38:9-33
+52    <uses-feature
+52-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:39:5-41:36
+53        android:name="android.hardware.screen.landscape"
+53-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:40:9-57
+54        android:required="false" />
+54-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:41:9-33
+55    <uses-feature
+55-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:42:5-44:36
+56        android:name="android.hardware.wifi"
+56-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:43:9-45
+57        android:required="false" />
+57-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:44:9-33
+58
+59    <application
+59-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:17:5-62:19
+60        android:name="com.droid.BharatChatApp"
+60-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:18:9-38
+61        android:allowBackup="false"
+61-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:19:9-36
+62        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+62-->[androidx.core:core:1.12.0] /Users/purushaprakriti/.gradle/caches/transforms-3/aa40ba40a5fc0c64cab30ed0aa0b8c87/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
+63        android:extractNativeLibs="false"
+64        android:icon="@android:drawable/ic_menu_compass"
+64-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:20:9-57
+65        android:label="BharatChat"
+65-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:21:9-35
+66        android:roundIcon="@android:drawable/ic_menu_compass"
+66-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:22:9-62
+67        android:supportsRtl="true"
+67-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:23:9-35
+68        android:theme="@style/Theme.Material3.DayNight.NoActionBar" >
+68-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:24:9-68
+69
+70        <!-- Main Dashboard Activity -->
+71        <activity
+71-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:27:9-42:20
+72            android:name="com.droid.MainActivity"
+72-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:28:13-41
+73            android:exported="true" >
+73-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:29:13-36
+74            <intent-filter>
+74-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:30:13-33:29
+75                <action android:name="android.intent.action.MAIN" />
+75-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:31:17-69
+75-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:31:25-66
+76
+77                <category android:name="android.intent.category.LAUNCHER" />
+77-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:32:17-77
+77-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:32:27-74
+78            </intent-filter>
+79            <intent-filter android:autoVerify="true" >
+79-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:35:13-41:29
+79-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:35:28-53
+80                <action android:name="android.intent.action.VIEW" />
+80-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:36:17-69
+80-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:36:25-66
+81
+82                <category android:name="android.intent.category.DEFAULT" />
+82-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:37:17-76
+82-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:37:27-73
+83                <category android:name="android.intent.category.BROWSABLE" />
+83-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:38:17-78
+83-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:38:27-75
+84
+85                <data
+85-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:17-76
+86                    android:host="install"
+86-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:51-73
+87                    android:scheme="bharatchat" />
+87-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:23-50
+88                <data
+88-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:17-76
+89                    android:host="local.bharatchat.mesh"
+89-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:51-73
+90                    android:pathPrefix="/download"
+90-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:40:82-112
+91                    android:scheme="http" />
+91-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:39:23-50
+92            </intent-filter>
+93        </activity>
+94
+95        <!-- QR Code Pairing Hub Activity -->
+96        <activity
+96-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:45:9-47:40
+97            android:name="com.droid.PairingActivity"
+97-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:46:13-44
+98            android:exported="false" />
+98-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:47:13-37
+99
+100        <!-- Matrix Secure Chat Terminal Activity -->
+101        <activity
+101-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:50:9-53:58
+102            android:name="com.droid.ChatActivity"
+102-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:51:13-41
+103            android:exported="false"
+103-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:52:13-37
+104            android:windowSoftInputMode="adjustResize" />
+104-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:53:13-55
+105
+106        <!-- ZXing Barcode Scanner Activity Support -->
+107        <activity
+107-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:56:9-60:49
+108            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+108-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:57:13-74
+109            android:clearTaskOnLaunch="true"
+109-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:49:13-45
+110            android:screenOrientation="fullSensor"
+110-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:58:13-51
+111            android:stateNotNeeded="true"
+111-->/Users/purushaprakriti/Desktop/BharatChat/src/main/AndroidManifest.xml:59:13-42
+112            android:theme="@style/zxing_CaptureTheme"
+112-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:52:13-54
+113            android:windowSoftInputMode="stateAlwaysHidden" />
+113-->[com.journeyapps:zxing-android-embedded:4.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/d0ae8d8e0303254cb0d81a94d2201b04/transformed/zxing-android-embedded-4.3.0/AndroidManifest.xml:53:13-60
+114
+115        <provider
+115-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:24:9-32:20
+116            android:name="androidx.startup.InitializationProvider"
+116-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:25:13-67
+117            android:authorities="com.droid.bharatchat.androidx-startup"
+117-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:26:13-68
+118            android:exported="false" >
+118-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:27:13-37
+119            <meta-data
+119-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:29:13-31:52
+120                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+120-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:30:17-75
+121                android:value="androidx.startup" />
+121-->[androidx.emoji2:emoji2:1.2.0] /Users/purushaprakriti/.gradle/caches/transforms-3/cfe7f1c72c6bf0887e3130d7e8833d7f/transformed/emoji2-1.2.0/AndroidManifest.xml:31:17-49
+122            <meta-data
+122-->[androidx.lifecycle:lifecycle-process:2.6.1] /Users/purushaprakriti/.gradle/caches/transforms-3/ec716e98cecab73a9551ea8e3beeb2d4/transformed/lifecycle-process-2.6.1/AndroidManifest.xml:29:13-31:52
+123                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+123-->[androidx.lifecycle:lifecycle-process:2.6.1] /Users/purushaprakriti/.gradle/caches/transforms-3/ec716e98cecab73a9551ea8e3beeb2d4/transformed/lifecycle-process-2.6.1/AndroidManifest.xml:30:17-78
+124                android:value="androidx.startup" />
+124-->[androidx.lifecycle:lifecycle-process:2.6.1] /Users/purushaprakriti/.gradle/caches/transforms-3/ec716e98cecab73a9551ea8e3beeb2d4/transformed/lifecycle-process-2.6.1/AndroidManifest.xml:31:17-49
+125            <meta-data
+125-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:29:13-31:52
+126                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+126-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:30:17-85
+127                android:value="androidx.startup" />
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:31:17-49
+128        </provider>
+129
+130        <receiver
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:34:9-52:20
+131            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+131-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:35:13-76
+132            android:directBootAware="false"
+132-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:36:13-44
+133            android:enabled="true"
+133-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:37:13-35
+134            android:exported="true"
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:38:13-36
+135            android:permission="android.permission.DUMP" >
+135-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:39:13-57
+136            <intent-filter>
+136-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:40:13-42:29
+137                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+137-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:17-91
+137-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:25-88
+138            </intent-filter>
+139            <intent-filter>
+139-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:43:13-45:29
+140                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+140-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:17-85
+140-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:25-82
+141            </intent-filter>
+142            <intent-filter>
+142-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:46:13-48:29
+143                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+143-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:17-88
+143-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:25-85
+144            </intent-filter>
+145            <intent-filter>
+145-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:49:13-51:29
+146                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+146-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:17-95
+146-->[androidx.profileinstaller:profileinstaller:1.3.0] /Users/purushaprakriti/.gradle/caches/transforms-3/db7345e9b277057cf8afc2484184a2cf/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:25-92
+147            </intent-filter>
+148        </receiver>
+149    </application>
+150
+151</manifest>

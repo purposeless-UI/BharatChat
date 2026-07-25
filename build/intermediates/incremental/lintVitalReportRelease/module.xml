@@ -1,0 +1,18 @@
+<lint-module
+    format="1"
+    dir="/Users/purushaprakriti/Desktop/BharatChat"
+    name=":"
+    type="APP"
+    maven=":BharatChat:"
+    agpVersion="8.1.0"
+    buildFolder="build"
+    bootClassPath="/Users/purushaprakriti/Library/Android/sdk/platforms/android-34/android.jar:/Users/purushaprakriti/Library/Android/sdk/build-tools/33.0.1/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-34">
+  <lintOptions
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>
