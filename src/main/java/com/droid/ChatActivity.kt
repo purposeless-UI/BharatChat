@@ -50,34 +50,17 @@ class ChatActivity : AppCompatActivity() {
         contactStorageManager = ContactStorageManager(this)
         activeSessionKey = MeshCryptoEngine.generateSessionKey()
 
-        // Initialize Packet Router with current user id for recipient verification
-        packetRouter = MeshPacketRouter(
-            currentUserId = myUsername,
-            onMessageReadyToDeliver = { packet ->
-                runOnUiThread {
-                    val logEntry = "[${packet.senderId}]: ${packet.encryptedPayload}  [✓✓ Received]"
-                    chatLogTextView.append("\n$logEntry")
-                    contactStorageManager.saveMessageToPeerHistory(targetPeerName, logEntry)
-                }
-            },
-            onPacketRelay = { relayedPacket ->
-                // Multi-hop relay propagation over BLE mesh
-                meshService.transmitPacket(relayedPacket.serialize())
-            }
-        )
-
-        // Initialize Bluetooth Mesh Service with active packet listener injection
-        meshService = BluetoothMeshService(
-            context = this,
-            onPacketReceived = { rawBytes ->
-                val incomingPacket = MeshPacket.deserialize(rawBytes)
-                if (incomingPacket != null) {
-                    runOnUiThread {
-                        packetRouter.handleIncomingPacket(incomingPacket)
-                    }
-                }
-            }
-        )
+        // Use the single app-wide mesh service and packet router (owned by
+        // BharatChatApp) instead of creating new ones here. Previously ChatActivity
+        // instantiated its own BluetoothMeshService, which meant:
+        //  1. It ran a second, simultaneous BLE advertisement alongside the one
+        //     already running in the background service, which many phones can't
+        //     do at the same time - so sends silently failed even though the UI
+        //     showed "Sent".
+        //  2. Packets received by the background service while this screen wasn't
+        //     open never reached this router, and vice versa.
+        meshService = BharatChatApp.instance.globalBluetoothMeshService
+        packetRouter = BharatChatApp.instance.globalPacketRouter
 
         // Root Layout (Terminal Background)
         val layout = LinearLayout(this).apply {
@@ -208,9 +191,32 @@ class ChatActivity : AppCompatActivity() {
         // Load saved chat history specific to this user panel on start
         loadPeerChatHistory()
 
-        // Start scanning and advertising for peer packets on launch
-        meshService.startAdvertising()
-        meshService.startScanning()
+        // Scanning/advertising already runs continuously in the shared background
+        // service (BharatChatApp), so there's no need to start it again here.
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Become the live listener for this peer while this screen is visible, so
+        // incoming messages appear immediately instead of only after re-opening the
+        // chat. Anything that arrives while we're NOT the active listener is still
+        // saved to storage by BharatChatApp and picked up below by reloading history.
+        BharatChatApp.instance.activeMessageListener = { packet ->
+            if (packet.senderId == targetPeerName) {
+                runOnUiThread {
+                    val logEntry = "[${packet.senderId}]: ${packet.encryptedPayload}  [\u2713\u2713 Received]"
+                    chatLogTextView.append("\n$logEntry")
+                }
+            }
+        }
+        loadPeerChatHistory()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (BharatChatApp.instance.activeMessageListener != null) {
+            BharatChatApp.instance.activeMessageListener = null
+        }
     }
 
     private fun loadPeerChatHistory() {
@@ -246,33 +252,39 @@ class ChatActivity : AppCompatActivity() {
             encryptedPayload = textMessage
         )
 
-        // TRANSMIT VIA REAL BLE MESH HARDWARE PACKET SERIALIZATION
-        val isSuccessful = meshService.transmitPacket(outgoingPacket.serialize())
-        val logEntry: String
-
-        if (isSuccessful) {
-            logEntry = "[$myUsername]: $textMessage  [✓✓ Sent (BLE Mesh)]"
-            Toast.makeText(this, "Packet broadcasted via Bluetooth Mesh", Toast.LENGTH_SHORT).show()
-        } else {
-            // Queue in outbox if transmission failed
-            outboxManager.enqueueMessage(
-                messageId = messageId,
-                recipientId = targetPeerName,
-                plainText = textMessage,
-                contactKey = activeSessionKey
-            )
-            logEntry = "[$myUsername]: $textMessage  [🕒 Queued (Out of Range)]"
-            Toast.makeText(this, "Device out of direct range. Saved to outbox queue.", Toast.LENGTH_LONG).show()
-        }
-
-        chatLogTextView.append("\n$logEntry")
-        contactStorageManager.saveMessageToPeerHistory(targetPeerName, logEntry)
-
+        // Show a pending state immediately, then correct it once we know the real
+        // outcome. Previously transmitPacket()'s return value was always `true`
+        // regardless of whether the BLE radio actually accepted the broadcast, so
+        // the chat log always claimed "Sent" even when nothing went out.
+        val pendingEntry = "[$myUsername]: $textMessage  [\u23F3 Sending...]"
+        chatLogTextView.append("\n$pendingEntry")
         messageInputBox.setText("")
+
+        meshService.transmitPacket(outgoingPacket.serialize()) { isSuccessful ->
+            runOnUiThread {
+                val logEntry: String
+                if (isSuccessful) {
+                    logEntry = "[$myUsername]: $textMessage  [\u2713\u2713 Sent (BLE Mesh)]"
+                } else {
+                    // Queue in outbox if transmission failed so it can be retried later
+                    outboxManager.enqueueMessage(
+                        messageId = messageId,
+                        recipientId = targetPeerName,
+                        plainText = textMessage,
+                        contactKey = activeSessionKey
+                    )
+                    logEntry = "[$myUsername]: $textMessage  [\uD83D\uDD52 Queued (Out of Range)]"
+                    Toast.makeText(this, "Device out of direct range. Saved to outbox queue.", Toast.LENGTH_LONG).show()
+                }
+                // Replace the pending line with the final status
+                val current = chatLogTextView.text.toString()
+                chatLogTextView.text = current.removeSuffix(pendingEntry) + logEntry
+                contactStorageManager.saveMessageToPeerHistory(targetPeerName, logEntry)
+            }
+        }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        meshService.stopAll()
-    }
+    // No onDestroy() override: meshService is the shared app-wide instance and must
+    // keep running after this screen closes. Calling stopAll() here (as before) would
+    // kill BLE scanning/advertising for the entire app the moment you left a chat.
 }

@@ -26,7 +26,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        meshService = BluetoothMeshService(this)
+        // Use the single app-wide mesh service (owned by BharatChatApp) instead of a
+        // private instance. A private instance here had its own empty, never-shared
+        // discovered-peer list, so "Launch Matrix Chat" would say "No Active Peers
+        // Found" even after a peer had already been discovered/paired elsewhere.
+        meshService = BharatChatApp.instance.globalBluetoothMeshService
 
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -142,8 +146,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        meshService.stopAll()
-    }
+    // Note: no onDestroy() override here. meshService is the shared app-wide instance
+    // (owned by BharatChatApp), so it must keep running in the background even after
+    // this screen is destroyed - e.g. navigating to Pairing or Chat used to call
+    // stopAll() on a private copy of the service when this Activity was destroyed,
+    // which had no real effect on the others, but doing it on the SHARED instance
+    // would have silently killed scanning/advertising for the whole app.
 }

@@ -13,7 +13,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.droid.bharatchat.UserProfileManager
-import com.droid.crypto.MeshCryptoEngine
 import com.droid.storage.ContactStorageManager
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
@@ -38,8 +37,14 @@ class PairingActivity : AppCompatActivity() {
         contactStorageManager = ContactStorageManager(this)
         myUsername = UserProfileManager.getMyUsername(this)
         
-        // Dynamically encode username combined with a unique cryptographic public identity handle
-        myPairingCode = "BHARATCHAT_USER:$myUsername|KEY:${MeshCryptoEngine.generateSessionKey().encoded.joinToString("") { "%02x".format(it) }}"
+        // Encode username combined with this device's persistent presence-tag identity
+        // key (see UserProfileManager.getMyIdentitySecret). Previously this called
+        // MeshCryptoEngine.generateSessionKey() fresh every time this screen opened,
+        // so a peer who scanned your QR code would save a key that stopped matching
+        // the moment you reopened Pairing - presence-tag verification could never
+        // succeed. Using a stable, persisted secret fixes that.
+        val myIdentitySecret = UserProfileManager.getMyIdentitySecret(this)
+        myPairingCode = "BHARATCHAT_USER:$myUsername|KEY:${myIdentitySecret.joinToString("") { "%02x".format(it) }}"
 
         // Root Layout (Terminal Background Styling)
         val layout = LinearLayout(this).apply {
@@ -131,9 +136,30 @@ class PairingActivity : AppCompatActivity() {
                 Toast.makeText(this, "Scanning cancelled", Toast.LENGTH_SHORT).show()
             } else {
                 val scannedKey = result.contents
-                // Save the scanned contact key locally and securely
-                contactStorageManager.saveContactSecret(scannedKey)
-                
+
+                // Pull out just the hex identity key and re-encode it as Base64, which is
+                // the format ContactStorageManager.getTrustedContactSecrets() expects.
+                // Previously the ENTIRE raw QR string (including the
+                // "BHARATCHAT_USER:name|KEY:" prefix) was saved and then blindly
+                // Base64-decoded elsewhere, which threw, silently fell back to using the
+                // whole string's raw bytes as the "secret", and could never match a real
+                // presence tag - so scanned contacts were never recognized as verified
+                // peers.
+                val hexKey = if (scannedKey.contains("KEY:")) {
+                    scannedKey.substringAfter("KEY:")
+                } else {
+                    null
+                }
+                if (hexKey != null && hexKey.matches(Regex("^[0-9a-fA-F]+$")) && hexKey.length % 2 == 0) {
+                    val keyBytes = ByteArray(hexKey.length / 2) { i ->
+                        hexKey.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                    }
+                    val cleanSecretB64 = android.util.Base64.encodeToString(keyBytes, android.util.Base64.NO_WRAP)
+                    contactStorageManager.saveContactSecret(cleanSecretB64)
+                } else {
+                    Toast.makeText(this, "QR code wasn't a valid BharatChat pairing code", Toast.LENGTH_LONG).show()
+                }
+
                 statusTextView.text = "> STATUS: [PAIRED SUCCESSFULLY]\n> SAVED_PEER: $scannedKey"
                 Toast.makeText(this, "Mutual Handshake Complete & Saved!", Toast.LENGTH_LONG).show()
 
