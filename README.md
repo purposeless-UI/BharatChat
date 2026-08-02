@@ -3,7 +3,7 @@
 Contact-gated messaging, open Bluetooth relay. No Nostr, no internet
 dependency, no server of yours to run.
 
-License: **GPLv3** — see `LICENSE.md` and `NOTICE.md`.
+
 
 ## The privacy model, precisely
 
