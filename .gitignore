@@ -1,6 +1,7 @@
 local.properties
 .gradle/
 build/
+.kotlin/
 *.iml
 .idea/
 .DS_Store
