@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BharatChat" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Material Design attributes -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/onPrimary</item>
+        <item name="colorPrimaryContainer">@color/primaryContainer</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/onSurface</item>
+        <item name="colorOnBackground">@color/onBackground</item>
+
+        <!-- Framework attributes – MUST have android: prefix -->
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+    </style>
+
+    <!-- Custom Widgets -->
+    <style name="Widget.BharatChat.Button" parent="Widget.Material3.Button">
+        <item name="android:textColor">@color/onPrimary</item>
+        <item name="android:backgroundTint">@color/primary</item>
+        <item name="cornerRadius">24dp</item>
+    </style>
+
+    <style name="Widget.BharatChat.TextInput" parent="Widget.Material3.TextInputEditText.OutlinedBox">
+        <item name="android:textColor">@color/onSurface</item>
+        <item name="boxStrokeColor">@color/primary</item>
+        <item name="boxBackgroundColor">@color/surfaceVariant</item>
+        <item name="cornerRadius">16dp</item>
+    </style>
+</resources>

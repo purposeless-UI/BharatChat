@@ -8,13 +8,17 @@ import com.droid.crypto.SealedBox
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.max
+import kotlin.random.Random
 
 @Suppress("SpellCheckingInspection")
 class BleMeshManager(
     private val context: Context,
     private val mySecretKey: ByteArray,
     private val myPeerIdHex: String,
-    onMessage: (fromPeerIdHex: String, plaintext: String) -> Unit,
+    // ✅ Updated: onMessage now receives packetId as well
+    onMessage: (fromPeerIdHex: String, packetId: String, plaintext: String) -> Unit,
     private val onAck: (originalPacketId: String, ackType: Int) -> Unit
 ) {
     companion object {
@@ -23,6 +27,7 @@ class BleMeshManager(
         private const val ROUTE_QUALITY_DECAY_FACTOR = 0.9f
         private const val ROUTE_EXPIRY_MS = 60000L
         private const val ROUTE_MIN_QUALITY = 5
+        private const val MAX_FRAGMENT_MEMORY_BYTES = 1024 * 1024 // 1 MB
     }
 
     data class RoutingEntry(
@@ -30,17 +35,19 @@ class BleMeshManager(
         var quality: Int = 10,
         var lastSeen: Long = System.currentTimeMillis()
     )
-    private val routingTable = ConcurrentHashMap<String, RoutingEntry>()
 
+    private val routingTable = ConcurrentHashMap<String, RoutingEntry>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val onMessageCallback = onMessage
     private val seenPackets = SeenPacketCache()
+    // Maps device Bluetooth address -> peer ID of the directly connected node
     private val addressToPeerId = ConcurrentHashMap<String, String>()
     private val isRunning = AtomicBoolean(false)
     private val fragmentCache = ConcurrentHashMap<String, MutableMap<Int, ByteArray>>()
     private val fragmentTimestamps = ConcurrentHashMap<String, Long>()
     private val relayReversePath = ConcurrentHashMap<String, String>()
     private val fragmentAddresses = ConcurrentHashMap<String, String>()
+    private val fragmentTotalBytes = AtomicLong(0) // global cap
 
     private val server = BleGattServerManager(
         context = context,
@@ -50,10 +57,13 @@ class BleMeshManager(
 
     private val client = BleGattClientManager(
         context = context,
-        onPeerConnected = { peerId, address ->
+        onPeerConnected = { peerId, address, rssi ->
+            // This is the ONLY place we set addressToPeerId
             addressToPeerId[address] = peerId
-            routingTable[peerId] = RoutingEntry(address, quality = 20)
-            Log.d(TAG, "Client connected to $peerId at $address")
+            // Use RSSI to boost initial quality (range -100..0, add up to 10)
+            val rssiBoost = if (rssi in -100..0) (rssi + 100) / 10 else 0
+            routingTable[peerId] = RoutingEntry(address, quality = 20 + rssiBoost)
+            Log.d(TAG, "Client connected to $peerId at $address (RSSI=$rssi, quality=${20 + rssiBoost})")
         },
         onPeerDisconnected = { address ->
             addressToPeerId.remove(address)
@@ -81,6 +91,7 @@ class BleMeshManager(
         fragmentCache.clear()
         fragmentTimestamps.clear()
         fragmentAddresses.clear()
+        fragmentTotalBytes.set(0)
         routingTable.clear()
         mainHandler.removeCallbacks(cleanupRunnable)
         mainHandler.removeCallbacks(helloRunnable)
@@ -93,7 +104,10 @@ class BleMeshManager(
     fun isRunning(): Boolean = isRunning.get()
     fun connectedPeerCount(): Int = server.connectedAddresses().size + client.connectedAddresses().size
 
-    fun sendMessage(recipientPeerIdHex: String, recipientCompressedPubkey: ByteArray, plaintext: String): Boolean {
+    /**
+     * Sends a message to a peer. Returns the packet ID (for ACK tracking) on success, null on failure.
+     */
+    fun sendMessage(recipientPeerIdHex: String, recipientCompressedPubkey: ByteArray, plaintext: String): String? {
         try {
             val sealed = SealedBox.seal(recipientCompressedPubkey, plaintext.toByteArray(Charsets.UTF_8))
             val payloadJson = JSONObject()
@@ -115,7 +129,7 @@ class BleMeshManager(
                     payload = payloadBytes
                 )
                 seenPackets.markSeen(packet.packetIdHex)
-                return sendPacketSmart(packet)
+                return if (sendPacketSmart(packet)) packetId else null
             } else {
                 val maxSize = BleConstants.MAX_FRAGMENT_PAYLOAD_SIZE
                 val totalFragments = (payloadBytes.size + maxSize - 1) / maxSize
@@ -133,14 +147,14 @@ class BleMeshManager(
                     )
                     if (!sendPacketSmart(fragPacket)) {
                         Log.e(TAG, "Failed to send fragment $i of $totalFragments")
-                        return false
+                        return null
                     }
                 }
-                return true
+                return packetId
             }
         } catch (e: Exception) {
             Log.e(TAG, "sendMessage failed", e)
-            return false
+            return null
         }
     }
 
@@ -187,7 +201,24 @@ class BleMeshManager(
         try {
             if (seenPackets.hasSeen(packet.packetIdHex)) return
             seenPackets.markSeen(packet.packetIdHex)
-            addressToPeerId[fromAddress] = packet.senderPeerIdHex
+
+            // Do NOT overwrite addressToPeerId here – it is set only on direct connection.
+            // Learn multi-hop route: if the sender is not the immediate neighbor, store a route via fromAddress.
+            val immediatePeer = addressToPeerId[fromAddress]
+            if (immediatePeer != null && immediatePeer != packet.senderPeerIdHex) {
+                // This packet came from a different peer via this address (relayed)
+                val senderId = packet.senderPeerIdHex
+                val existing = routingTable[senderId]
+                if (existing == null) {
+                    routingTable[senderId] = RoutingEntry(fromAddress, quality = 5) // lower initial quality
+                    Log.d(TAG, "Learned multi-hop route to $senderId via $fromAddress")
+                } else {
+                    // Update existing route if this path is better or fresher
+                    existing.quality = max(existing.quality, 5)
+                    existing.nextHopAddress = fromAddress
+                    existing.lastSeen = System.currentTimeMillis()
+                }
+            }
 
             when (packet.type) {
                 BleConstants.TYPE_DATA -> {
@@ -269,13 +300,36 @@ class BleMeshManager(
         fragmentAddresses[originalId] = fromAddress
 
         val parts = fragmentCache.getOrPut(originalId) { ConcurrentHashMap() }
+
+        // Check if we already have this fragment index
+        if (parts.containsKey(fragmentData.index)) {
+            Log.d(TAG, "Duplicate fragment ${fragmentData.index} for $originalId, ignoring")
+            return
+        }
+
+        // Add fragment and update byte count
+        val addedBytes = fragmentData.data.size
         parts[fragmentData.index] = fragmentData.data
+        fragmentTotalBytes.addAndGet(addedBytes.toLong())
+
+        // Global cap: if exceeded, evict oldest incomplete set
+        if (fragmentTotalBytes.get() > MAX_FRAGMENT_MEMORY_BYTES) {
+            val oldestId = fragmentTimestamps.keys.minByOrNull { fragmentTimestamps[it] ?: Long.MAX_VALUE }
+            if (oldestId != null) {
+                Log.w(TAG, "Fragment memory cap exceeded, evicting $oldestId")
+                fragmentCache.remove(oldestId)?.values?.forEach { arr -> fragmentTotalBytes.addAndGet(-arr.size.toLong()) }
+                fragmentTimestamps.remove(oldestId)
+                fragmentAddresses.remove(oldestId)
+            }
+        }
 
         if (parts.size == fragmentData.total) {
             val sortedKeys = parts.keys.sorted()
             val fullPayload = sortedKeys.flatMap { parts[it]!!.toList() }.toByteArray()
             fragmentCache.remove(originalId)
             fragmentTimestamps.remove(originalId)
+            // subtract bytes of this set
+            parts.values.forEach { fragmentTotalBytes.addAndGet(-it.size.toLong()) }
             val storedAddress = fragmentAddresses.remove(originalId) ?: ""
 
             val dataPacket = BlePacket(
@@ -305,7 +359,8 @@ class BleMeshManager(
             val plaintext = String(SealedBox.unseal(mySecretKey, sealed), Charsets.UTF_8)
 
             sendAck(packet.senderPeerIdHex, packet.packetIdHex, BleConstants.TYPE_DELIVERY_ACK, immediateAddress = fromAddress)
-            onMessageCallback(packet.senderPeerIdHex, plaintext)
+            // ✅ Now pass packetId as the second argument
+            onMessageCallback(packet.senderPeerIdHex, packet.packetIdHex, plaintext)
 
             mainHandler.postDelayed({
                 sendAck(packet.senderPeerIdHex, packet.packetIdHex, BleConstants.TYPE_READ_ACK, immediateAddress = fromAddress)
@@ -317,15 +372,36 @@ class BleMeshManager(
 
     private fun relayOnward(packet: BlePacket, excludingAddress: String) {
         if (packet.ttl <= 0) return
+        val allAddresses = (server.connectedAddresses() + client.connectedAddresses()) - excludingAddress
+        if (allAddresses.isEmpty()) return
+
+        // Adaptive relay probability based on peer count
+        val peerCount = allAddresses.size
+        val relayProbability = when {
+            peerCount <= 3 -> 1.0f
+            peerCount <= 6 -> 0.8f
+            else -> 0.6f
+        }
+
+        if (Random.nextFloat() > relayProbability) {
+            Log.d(TAG, "Relay suppressed by adaptive probability (peerCount=$peerCount)")
+            return
+        }
+
         relayReversePath[packet.packetIdHex] = excludingAddress
         val forwarded = packet.withDecrementedTtl()
-        val allAddresses = (server.connectedAddresses() + client.connectedAddresses()) - excludingAddress
+
+        // Jittered delay per peer (10–50 ms) to avoid collisions
         for (address in allAddresses) {
-            client.writeTo(address, forwarded) || server.notify(address, forwarded)
+            val delay = (10..50).random().toLong()
+            mainHandler.postDelayed({
+                if (isRunning.get()) {
+                    client.writeTo(address, forwarded) || server.notify(address, forwarded)
+                }
+            }, delay)
         }
     }
 
-    // ✅ FIXED: Flood even when direct send fails
     private fun sendAck(targetPeerId: String, originalPacketId: String, ackType: Int, immediateAddress: String? = null) {
         try {
             val ackPayload = originalPacketId.toByteArray(Charsets.UTF_8)
@@ -391,7 +467,7 @@ class BleMeshManager(
             val now = System.currentTimeMillis()
             fragmentTimestamps.entries.removeAll { (id, time) ->
                 if (now - time > 60000) {
-                    fragmentCache.remove(id)
+                    fragmentCache.remove(id)?.values?.forEach { fragmentTotalBytes.addAndGet(-it.size.toLong()) }
                     true
                 } else false
             }

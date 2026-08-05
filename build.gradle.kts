@@ -2,6 +2,7 @@ plugins {
     id("com.android.application") version "8.8.2"
     id("org.jetbrains.kotlin.android") version "2.0.21"
     id("com.google.devtools.ksp") version "2.0.21-1.0.27"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"   // add this
 }
 
 android {
@@ -53,9 +54,10 @@ kotlin {
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.mediarouter:mediarouter:1.8.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.cardview:cardview:1.0.0")                 // ✅ Added
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4") // ✅ Added
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.security:security-crypto-ktx:1.1.0-alpha06")
@@ -65,7 +67,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.17.1")   // ✅ downgraded
+    implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.17.1")
 
     // Room with KSP
     implementation("androidx.room:room-runtime:2.6.1")
@@ -75,4 +77,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+
+    // nostr
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 }

@@ -25,6 +25,8 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -32,6 +34,8 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.droid.ble.peerIdFromPubkey
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -52,6 +56,9 @@ class PairingActivity : AppCompatActivity() {
     private var hasHandledScan = false
     private val tag = "PairingActivity"
 
+    // ✅ Room database instance
+    private lateinit var db: AppDatabase
+
     private val requestCameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -61,13 +68,16 @@ class PairingActivity : AppCompatActivity() {
         } else {
             Toast.makeText(this, "Camera permission required.", Toast.LENGTH_LONG).show()
             Log.w(tag, "Camera permission denied")
-            scannerContainer.visibility = android.view.View.GONE
+            scannerContainer.isVisible = false
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(tag, "onCreate")
+
+        // ✅ Initialize Room database
+        db = AppDatabase.getInstance(this)
 
         val identity = IdentityStore.loadOrCreate(this)
         val fullCode = IdentityStore.pairingCode(identity)
@@ -169,7 +179,7 @@ class PairingActivity : AppCompatActivity() {
         scannerContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 500)
-            visibility = android.view.View.GONE
+            isVisible = false
         }
         previewView = PreviewView(this)
         scannerContainer.addView(previewView)
@@ -180,17 +190,15 @@ class PairingActivity : AppCompatActivity() {
         Log.d(tag, "UI setup complete")
     }
 
-    // ===== UPDATED: toggle scanner with release =====
     private fun toggleScanner() {
-        // If scanner is already visible, hide it and release camera
-        if (scannerContainer.visibility == android.view.View.VISIBLE) {
-            scannerContainer.visibility = android.view.View.GONE
+        if (scannerContainer.isVisible) {
+            scannerContainer.isVisible = false
             releaseCamera()
             return
         }
 
         Log.d(tag, "toggleScanner called – showing scanner")
-        scannerContainer.visibility = android.view.View.VISIBLE
+        scannerContainer.isVisible = true
         hasHandledScan = false
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             Log.d(tag, "Camera permission already granted, starting camera")
@@ -238,7 +246,6 @@ class PairingActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    // ===== NEW: release camera =====
     private fun releaseCamera() {
         try {
             cameraExecutor?.shutdown()
@@ -266,13 +273,12 @@ class PairingActivity : AppCompatActivity() {
                 text.removePrefix("bharatchat://")
             } else text
             codeInput.setText(cleanText)
-            scannerContainer.visibility = android.view.View.GONE
-            releaseCamera() // ✅ Release camera after scanning
+            scannerContainer.isVisible = false
+            releaseCamera()
             processConnection(text.trim())
         }
     }
 
-    // ===== UPDATED: extract 130‑hex (uncompressed) and 66‑hex (compressed) =====
     private fun processConnection(rawInput: String) {
         val clean = rawInput.trim()
         Log.d(tag, "processConnection: rawInput='$rawInput', clean='$clean'")
@@ -282,17 +288,18 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
-        // 1. Check for 6‑digit short code
+        // 1. Check for 6-digit short code
         if (clean.length == 6) {
             lifecycleScope.launch {
                 try {
-                    val contacts = ContactsStore.list(this@PairingActivity)
+                    // ✅ Use Room instead of ContactsStore
+                    val contacts = db.contactDao().getAllContacts().first()
                     val match = contacts.firstOrNull {
                         it.xOnlyPubkeyHex.takeLast(6).equals(clean, ignoreCase = true) ||
-                                it.pubkeyHex.takeLast(6).equals(clean, ignoreCase = true)
+                                it.pubkey.takeLast(6).equals(clean, ignoreCase = true)
                     }
                     if (match != null) {
-                        processContact(match.pubkeyHex)
+                        processContact(match.pubkey)
                     } else {
                         Toast.makeText(
                             this@PairingActivity,
@@ -309,90 +316,8 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
-        // 2. Try to extract the public key from the input
-        var extractedKey: String? = null
-
-        // Strip any known scheme
-        var content = clean
-        val schemePattern = Regex("""^[a-zA-Z]+://""")
-        if (schemePattern.containsMatchIn(content)) {
-            content = schemePattern.replaceFirst(content, "")
-            Log.d(tag, "After stripping scheme: '$content'")
-        }
-        if (content.startsWith("bharatchat:", ignoreCase = true)) {
-            content = content.substring("bharatchat:".length).trim()
-            Log.d(tag, "After stripping 'bharatchat:': '$content'")
-        }
-
-        // Look for 130‑hex (uncompressed) – full key
-        val hex130 = Regex("""[0-9a-fA-F]{130}""").find(content)?.value
-        if (hex130 != null) {
-            val lower = hex130.lowercase()
-            if (lower.startsWith("04")) {
-                extractedKey = lower
-                Log.d(tag, "Found 130‑hex uncompressed key: '$extractedKey'")
-            } else {
-                Log.w(tag, "Found 130‑hex but invalid prefix: $lower")
-                Toast.makeText(this, "Found a 130‑hex string but it doesn't start with 04. Please use the QR code from this app.", Toast.LENGTH_LONG).show()
-                hasHandledScan = false
-                return
-            }
-        } else {
-            // If no 130‑hex, look for 66‑hex (compressed)
-            val hex66 = Regex("""[0-9a-fA-F]{66}""").find(content)?.value
-            if (hex66 != null) {
-                val lower = hex66.lowercase()
-                if (lower.startsWith("02") || lower.startsWith("03")) {
-                    extractedKey = lower
-                    Log.d(tag, "Found 66‑hex compressed key: '$extractedKey'")
-                } else if (lower.startsWith("04")) {
-                    // 66‑hex with 04 is invalid – truncated uncompressed key
-                    Log.w(tag, "Found 66‑hex with 04 prefix – this is an invalid truncated key: $lower")
-                    Toast.makeText(
-                        this,
-                        "This QR contains an uncompressed key (should be 130 hex), but only 66 hex were extracted. Please scan the full QR code.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    hasHandledScan = false
-                    return
-                } else {
-                    Log.w(tag, "Found 66‑hex but invalid prefix: $lower")
-                    Toast.makeText(
-                        this,
-                        "Found a 66‑hex string but it doesn't start with 02, 03, or 04. Please use the QR code from this app.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    hasHandledScan = false
-                    return
-                }
-            }
-        }
-
-        // If not found, look for 64‑hex (x‑only) – reject
-        if (extractedKey == null) {
-            val hex64 = Regex("""[0-9a-fA-F]{64}""").find(content)?.value
-            if (hex64 != null) {
-                Log.w(tag, "Found 64‑hex (x‑only): $hex64")
-                Toast.makeText(
-                    this,
-                    "X‑only key provided (64 hex). Please provide the full compressed key (66 hex) from the QR.",
-                    Toast.LENGTH_LONG
-                ).show()
-                hasHandledScan = false
-                return
-            }
-        }
-
-        // If still null, try IdentityStore (if it starts with bharatchat://)
-        if (extractedKey == null && clean.startsWith("bharatchat://", ignoreCase = true)) {
-            try {
-                extractedKey = IdentityStore.pubkeyFromPairingCode(clean)
-                Log.d(tag, "IdentityStore extracted: '$extractedKey'")
-            } catch (e: Exception) {
-                Log.e(tag, "IdentityStore extraction failed", e)
-            }
-        }
-
+        // 2. Use PairingCodeValidator to extract the public key
+        val extractedKey = PairingCodeValidator.extractPublicKey(clean)
         if (extractedKey == null) {
             Log.e(tag, "Failed to extract any public key from input")
             Toast.makeText(this, "Invalid code format. Could not extract a public key.", Toast.LENGTH_SHORT).show()
@@ -400,12 +325,9 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
-        // Now we have either 130‑hex (uncompressed) or 66‑hex (compressed).
-        // processContact will call ContactsStore.add, which normalises.
         processContact(extractedKey)
     }
 
-    // ===== UPDATED: show dialog to ask for a name =====
     private fun processContact(pubkey: String) {
         Log.d(tag, "processContact: $pubkey")
         val myIdentity = IdentityStore.loadOrCreate(this)
@@ -418,7 +340,6 @@ class PairingActivity : AppCompatActivity() {
             return
         }
 
-        // Show dialog to get a custom name
         val editText = EditText(this).apply {
             hint = "Enter name (optional)"
         }
@@ -427,7 +348,7 @@ class PairingActivity : AppCompatActivity() {
             .setView(editText)
             .setPositiveButton("Save") { _, _ ->
                 val customName = editText.text.toString().trim()
-                val finalName = if (customName.isNotEmpty()) customName else "Peer_${pubkey.take(6).uppercase()}"
+                val finalName = customName.ifEmpty { "Peer_${pubkey.take(6).uppercase()}" }
                 saveContact(pubkey, finalName)
             }
             .setNegativeButton("Skip") { _, _ ->
@@ -436,12 +357,18 @@ class PairingActivity : AppCompatActivity() {
             .show()
     }
 
-    // Helper to save contact and open ChatActivity
     private fun saveContact(pubkey: String, name: String) {
         lifecycleScope.launch {
             try {
-                ContactsStore.add(this@PairingActivity, pubkey, name)
+                // ✅ Save contact to Room instead of ContactsStore
+                val contact = Contact(pubkey, name, System.currentTimeMillis())
+                db.contactDao().insert(contact)
                 Log.d(tag, "Contact saved: $name")
+
+                val peerId = peerIdFromPubkey(pubkey)
+                MeshServiceHolder.registerPeer(peerId, pubkey)
+                Log.d(tag, "Registered peer $peerId for outbox retry")
+
                 Toast.makeText(this@PairingActivity, "Successfully paired with $name!", Toast.LENGTH_LONG).show()
                 val intent = Intent(this@PairingActivity, ChatActivity::class.java)
                 intent.putExtra("contactPubkey", pubkey)
@@ -458,13 +385,13 @@ class PairingActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        releaseCamera() // ✅ Use the unified release method
+        releaseCamera()
         Log.d(tag, "onDestroy")
     }
 
     private fun generateQrBitmap(data: String, sizePx: Int): Bitmap {
         val matrix = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, sizePx, sizePx)
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
+        val bitmap = createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
         for (x in 0 until sizePx) {
             for (y in 0 until sizePx) {
                 bitmap.setPixel(x, y, if (matrix[x, y]) Color.DKGRAY else Color.WHITE)
@@ -474,7 +401,6 @@ class PairingActivity : AppCompatActivity() {
     }
 }
 
-// QR Code Analyzer (unchanged)
 private class QRCodeAnalyzer(private val onCode: (String) -> Unit) : ImageAnalysis.Analyzer {
     private val tag = "QRCodeAnalyzer"
     private val scanner = BarcodeScanning.getClient(

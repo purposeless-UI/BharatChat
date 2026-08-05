@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">BharatChat</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- Main Activity -->
+    <string name="mesh_initializing">Mesh: initializing…</string>
+    <string name="fab_add_contact">Add Contact</string>
+
+    <!-- Chat Activity -->
+    <string name="checking_connection">Checking connection…</string>
+    <string name="message_hint">Message…</string>
+    <string name="mic_button_desc">Voice message</string>
+    <string name="send_button_desc">Send message</string>
+
+    <!-- Voice Recording Dialog -->
+    <string name="voice_recording_hint">Tap 🎤 to start recording</string>
+    <string name="record_button_desc">Start/Stop recording</string>
+    <string name="cancel">Cancel</string>
+</resources>

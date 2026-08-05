@@ -14,9 +14,11 @@ object BleConstants {
     const val TYPE_DELIVERY_ACK = 0x03
     const val TYPE_READ_ACK = 0x04
     const val TYPE_DATA_FRAGMENT = 0x05
-    const val TYPE_HELLO = 0x06   // ✅ Added for B.A.T.M.A.N. routing
+    const val TYPE_HELLO = 0x06
 
-    // Maximum payload size for a single BLE packet (safe for typical MTU)
-    const val MAX_FRAGMENT_PAYLOAD_SIZE = 800
+    // Maximum safe payload size after MTU negotiation (517 bytes) minus header overhead.
+    // 450 ensures voice messages are properly fragmented and reassembled.
+    const val MAX_FRAGMENT_PAYLOAD_SIZE = 450
+
     const val TTL_ACK = 7   // Allows ACKs to travel back through multiple hops
 }

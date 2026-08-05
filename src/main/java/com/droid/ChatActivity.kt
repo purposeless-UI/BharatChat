@@ -3,22 +3,16 @@ package com.droid
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.media.MediaPlayer
-import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Base64
 import android.util.Log
-import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,31 +26,27 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.droid.ble.BleConstants
-import com.droid.ble.BlePacket
 import com.droid.ble.peerIdFromPubkey
 import com.droid.crypto.Secp256k1Signer
 import com.droid.crypto.hexToBytes
+import com.droid.storage.OutboxRetryScheduler
+import com.droid.voice.VoiceMessageSender
+import com.droid.voice.VoicePlayer
+import com.droid.voice.VoiceRecorder
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
-import org.json.JSONObject
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
-@Suppress(
-    "SetTextI18n",
-    "UseSetterMethod",
-    "RedundantQualifierName",
-    "NotifyDataSetChanged",
-    "SpellCheckingInspection",
-    "DEPRECATION"
-)
+@Suppress("SetTextI18n", "SpellCheckingInspection", "DEPRECATION")
 class ChatActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var messageAdapter: MessageAdapter
-    private lateinit var inputEditText: EditText
+    private lateinit var inputEditText: TextInputEditText
     private lateinit var statusTextView: TextView
+    private lateinit var sendButton: ImageView
+    private lateinit var micButton: ImageView
 
     private lateinit var contactPubkey: String
     private lateinit var contactName: String
@@ -64,7 +54,7 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var myIdentity: Identity
     private lateinit var db: AppDatabase
 
-    private val listenerKey = "chat-" + System.currentTimeMillis()
+    private val listenerKey = "chat-${System.currentTimeMillis()}"
     private val tag = "ChatActivity"
 
     private val handler = Handler(Looper.getMainLooper())
@@ -77,48 +67,44 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private val messages = mutableListOf<ChatMessage>()
+    // Key: packetId (String), Value: index in messages
     private val pendingMessages = mutableMapOf<String, Int>()
 
-    // ----- Multi-Select State -----
+    // Multi‑select state
     private var multiSelectMode = false
     private val selectedPositions = mutableSetOf<Int>()
     private var actionMode: ActionMode? = null
 
-    // ----- Voice Recording -----
-    private var mediaRecorder: MediaRecorder? = null
-    private var recordingFile: File? = null
-    private var isRecording = false
-    private var recordingStartTime: Long = 0
+    // Voice components
+    private lateinit var voiceRecorder: VoiceRecorder
+    private val voicePlayer = VoicePlayer()
+    private val voiceSender = VoiceMessageSender(
+        retryScheduler = MeshServiceHolder.getRetryScheduler()
+    )
+
+    // Timer for recording
     private var timerUpdateRunnable: Runnable? = null
 
-    // ----- Voice Playback -----
-    private var mediaPlayer: MediaPlayer? = null
-
-    // ----- Voice dialog reference -----
     private var voiceDialog: AlertDialog? = null
-
-    // Store the status text view so we can reset it
     private var voiceStatusText: TextView? = null
 
-    // ----- Permission launcher for microphone -----
+    // Outbox retry scheduler
+    private val retryScheduler: OutboxRetryScheduler? by lazy { MeshServiceHolder.getRetryScheduler() }
+
     private val requestRecordPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            showVoiceRecordingDialog()
-        } else {
-            Toast.makeText(this, "Microphone permission is required to send voice messages.", Toast.LENGTH_LONG).show()
-        }
+        if (granted) showVoiceRecordingDialog()
+        else Toast.makeText(this, "Microphone permission is required to send voice messages.", Toast.LENGTH_LONG).show()
     }
 
-    // ----- ActionMode Callback for multi-select (AppCompat) -----
     private val actionModeCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
             mode.menuInflater.inflate(R.menu.chat_multi_select, menu)
             return true
         }
 
-        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
             return when (item.itemId) {
@@ -141,7 +127,33 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_chat)
 
+        // Initialize voiceRecorder now that context is available
+        voiceRecorder = VoiceRecorder(cacheDir)
+
+        // Set up toolbar
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        toolbar.setNavigationOnClickListener { finish() }
+
+        // Find views
+        statusTextView = findViewById(R.id.statusTextView)
+        recyclerView = findViewById(R.id.recyclerView)
+        inputEditText = findViewById(R.id.inputEditText)
+        sendButton = findViewById(R.id.sendButton)
+        micButton = findViewById(R.id.micButton)
+
+        sendButton.setOnClickListener { sendMessage() }
+        micButton.setOnClickListener { checkMicrophonePermissionAndRecord() }
+
+        // Set up RecyclerView
+        recyclerView.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
+        messageAdapter = MessageAdapter()
+        recyclerView.adapter = messageAdapter
+
+        // Load contact info and messages
         try {
             val rawPubkey = intent.getStringExtra("contactPubkey") ?: run {
                 Toast.makeText(this, "Missing contact public key", Toast.LENGTH_SHORT).show()
@@ -184,110 +196,16 @@ class ChatActivity : AppCompatActivity() {
                 return
             }
 
+            // Register this peer so the outbox scheduler can send queued messages
+            MeshServiceHolder.registerPeer(contactPeerId, contactPubkey)
             ChatActivityState.currentContactPeerId = contactPeerId
 
             myIdentity = IdentityStore.loadOrCreate(this)
             db = AppDatabase.getInstance(this)
 
             title = contactName
-            setupUI()
-
             loadMessagesFromDb()
-
-            MeshServiceHolder.addMessageListener(listenerKey) { fromPeerId, plaintext ->
-                if (fromPeerId == contactPeerId) {
-                    runOnUiThread {
-                        val trimmed = plaintext.trim()
-                        Log.d(tag, "📩 Incoming message (raw): $trimmed")
-                        try {
-                            val json = JSONObject(trimmed)
-                            val type = json.optString("type", "text")
-                            Log.d(tag, "📩 Message type: $type")
-                            if (type == "voice") {
-                                val audioBase64 = json.getString("audio")
-                                val duration = json.optInt("duration", 0)
-                                Log.d(tag, "📩 Voice duration: $duration, base64 length: ${audioBase64.length}")
-
-                                val audioBytes = Base64.decode(audioBase64, Base64.NO_WRAP)
-                                val file = saveAudioFile(audioBytes)
-
-                                val msg = ChatMessage(
-                                    text = "[Voice Message]",
-                                    fromMe = false,
-                                    timestamp = System.currentTimeMillis(),
-                                    status = MessageStatus.DELIVERED,
-                                    messageId = "",
-                                    type = 1,
-                                    voiceDuration = duration.toLong(),
-                                    voiceFilePath = file.absolutePath
-                                )
-                                addMessage(msg)
-                                lifecycleScope.launch {
-                                    db.messageDao().insert(
-                                        MessageEntity(
-                                            contactPubkey = contactPubkey,
-                                            text = msg.text,
-                                            fromMe = false,
-                                            timestamp = msg.timestamp,
-                                            status = msg.status.ordinal,
-                                            messageId = msg.messageId,
-                                            type = msg.type,
-                                            voiceDuration = msg.voiceDuration,
-                                            voiceFilePath = msg.voiceFilePath
-                                        )
-                                    )
-                                }
-                            } else {
-                                val msg = ChatMessage(
-                                    text = trimmed,
-                                    fromMe = false,
-                                    timestamp = System.currentTimeMillis(),
-                                    status = MessageStatus.DELIVERED
-                                )
-                                addMessage(msg)
-                            }
-                        } catch (e: Exception) {
-                            Log.e(tag, "❌ JSON parse error: ${e.message}", e)
-                            Log.e(tag, "Failed JSON string: $trimmed")
-                            val msg = ChatMessage(
-                                text = trimmed,
-                                fromMe = false,
-                                timestamp = System.currentTimeMillis(),
-                                status = MessageStatus.DELIVERED
-                            )
-                            addMessage(msg)
-                        }
-                    }
-                }
-            }
-
-            MeshServiceHolder.addAckListener(listenerKey) { packetId, ackType ->
-                Log.d(tag, "🔄 ACK received: packetId=$packetId, ackType=$ackType")
-                Log.d(tag, "🔍 pendingMessages keys: ${pendingMessages.keys}")
-                runOnUiThread {
-                    val index = pendingMessages[packetId]
-                    Log.d(tag, "🔍 index for $packetId = $index")
-                    if (index != null && index < messages.size) {
-                        val msg = messages[index]
-                        val newStatus = when (ackType) {
-                            BleConstants.TYPE_DELIVERY_ACK -> MessageStatus.DELIVERED
-                            BleConstants.TYPE_READ_ACK -> MessageStatus.READ
-                            else -> msg.status
-                        }
-                        if (newStatus != msg.status) {
-                            messages[index] = msg.copy(status = newStatus)
-                            messageAdapter.notifyItemChanged(index)
-                            lifecycleScope.launch {
-                                db.messageDao().updateStatus(packetId, newStatus.ordinal)
-                            }
-                        }
-                    } else {
-                        Log.w(tag, "⚠️ index lookup failed for $packetId (index=$index, size=${messages.size})")
-                    }
-                }
-            }
-
-            Log.d(tag, "ChatActivity initialized successfully")
+            setupListeners()
         } catch (e: Exception) {
             Log.e(tag, "onCreate error", e)
             Toast.makeText(this, "Error opening chat: ${e.message}", Toast.LENGTH_LONG).show()
@@ -295,6 +213,50 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupListeners() {
+        // ACK listener – handles both Bluetooth and Nostr ACKs
+        MeshServiceHolder.addAckListener(listenerKey) { packetId, ackType ->
+            Log.d(tag, "🔄 ACK received: packetId=$packetId, ackType=$ackType")
+            Log.d(tag, "🔍 pendingMessages keys: ${pendingMessages.keys}")
+            runOnUiThread {
+                // Try to find the message index from the pending map first
+                var index = pendingMessages[packetId]
+
+                // If not found, scan the entire message list (fallback for edge cases)
+                if (index == null) {
+                    index = messages.indexOfFirst { it.messageId == packetId }
+                    if (index != -1) {
+                        Log.d(tag, "🔍 Found message by scanning list at index $index")
+                    }
+                }
+
+                // index is now non‑null (either from map or from scan, could be -1)
+                if (index != null && index >= 0 && index < messages.size) {
+                    val msg = messages[index]
+                    val newStatus = when (ackType) {
+                        // Bluetooth ACK types
+                        BleConstants.TYPE_DELIVERY_ACK -> MessageStatus.DELIVERED
+                        BleConstants.TYPE_READ_ACK -> MessageStatus.READ
+                        // Nostr ACK types
+                        1000 -> MessageStatus.DELIVERED   // Nostr delivery ACK
+                        1001 -> MessageStatus.READ        // Nostr read ACK
+                        else -> msg.status
+                    }
+                    if (newStatus != msg.status) {
+                        messages[index] = msg.copy(status = newStatus)
+                        messageAdapter.notifyItemChanged(index)
+                        lifecycleScope.launch {
+                            db.messageDao().updateStatus(packetId, newStatus.ordinal)
+                        }
+                    }
+                } else {
+                    Log.w(tag, "⚠️ index lookup failed for $packetId (index=$index, size=${messages.size})")
+                }
+            }
+        }
+    }
+
+    @Suppress("NotifyDataSetChanged")
     private fun loadMessagesFromDb() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -309,17 +271,17 @@ class ChatActivity : AppCompatActivity() {
                             fromMe = entity.fromMe,
                             timestamp = entity.timestamp,
                             status = status,
-                            messageId = entity.messageId,
+                            messageId = entity.messageId, // nullable
                             type = entity.type,
                             voiceDuration = entity.voiceDuration,
                             voiceFilePath = entity.voiceFilePath
                         )
                         messages.add(msg)
-                        if (entity.fromMe && entity.messageId.isNotBlank()) {
+                        // Only track outgoing messages that have a non‑null packetId
+                        if (entity.fromMe && entity.messageId != null) {
                             pendingMessages[entity.messageId] = messages.size - 1
                         }
                     }
-                    @Suppress("NotifyDataSetChanged")
                     messageAdapter.notifyDataSetChanged()
                     recyclerView.scrollToPosition(messages.size - 1)
                 }
@@ -344,103 +306,44 @@ class ChatActivity : AppCompatActivity() {
         handler.removeCallbacks(pollRunnable)
         MeshServiceHolder.removeMessageListener(listenerKey)
         MeshServiceHolder.removeAckListener(listenerKey)
-        mediaRecorder?.release()
-        mediaRecorder = null
-        mediaPlayer?.release()
-        mediaPlayer = null
-        timerUpdateRunnable?.let { handler.removeCallbacks(it) }
-        timerUpdateRunnable = null
+        voiceRecorder.cancelRecording()
+        voicePlayer.stop()
         voiceDialog = null
         voiceStatusText = null
     }
 
-    private fun setupUI() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            setBackgroundColor(Color.DKGRAY)
-        }
-
-        statusTextView = TextView(this).apply {
-            setPadding(16, 12, 16, 12)
-            textSize = 12f
-            text = "Checking connection…"
-            setTextColor(Color.rgb(255, 165, 0))
-        }
-        root.addView(statusTextView)
-
-        recyclerView = RecyclerView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            layoutManager = LinearLayoutManager(this@ChatActivity).apply {
-                stackFromEnd = true
-            }
-            setBackgroundColor(Color.DKGRAY)
-        }
-        messageAdapter = MessageAdapter(messages, contactName, this::showDeleteDialog)
-        recyclerView.adapter = messageAdapter
-        root.addView(recyclerView)
-
-        val inputRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(16, 16, 16, 16)
-            setBackgroundColor(Color.DKGRAY)
-        }
-        inputEditText = EditText(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            hint = "Message $contactName"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setBackgroundResource(android.R.color.transparent)
-        }
-        inputRow.addView(inputEditText)
-
-        val micButton = Button(this).apply {
-            text = "🎤"
-            textSize = 24f
-            setTextColor(Color.rgb(255, 165, 0))
-            setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener { checkMicrophonePermissionAndRecord() }
-        }
-        inputRow.addView(micButton)
-
-        val sendButton = Button(this).apply {
-            text = "Send"
-            setTextColor(Color.rgb(255, 165, 0))
-            setBackgroundColor(Color.DKGRAY)
-            val drawable = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.DKGRAY)
-                setStroke(2, Color.rgb(255, 165, 0))
-                setCornerRadius(8f)
-            }
-            background = drawable
-            setOnClickListener { sendMessage() }
-        }
-        inputRow.addView(sendButton)
-        root.addView(inputRow)
-
-        setContentView(root)
-    }
-
+    /**
+     * Update the connection status display with clear indicators for:
+     * - Direct Bluetooth connection
+     * - Mesh relay via Bluetooth
+     * - Internet relay via Nostr (works even with Bluetooth OFF)
+     * - No connection
+     */
     private fun updateConnectionStatus() {
-        val directlyConnected = MeshServiceHolder.current()?.isDirectlyConnectedToPeer(contactPeerId) ?: false
-        statusTextView.text = if (directlyConnected) {
-            "● Connected directly to $contactName via Bluetooth"
-        } else {
-            "○ $contactName not directly in range — messages relayed through mesh"
+        val directlyConnected = MeshServiceHolder.isDirectlyConnectedToPeer(contactPeerId)
+        val hasBluetoothPeers = MeshServiceHolder.getConnectedPeerCount() > 0
+        val nostrAvailable = MeshServiceHolder.isNostrAvailable()
+        val bluetoothAvailable = MeshServiceHolder.isBluetoothAvailable()
+
+        statusTextView.text = when {
+            directlyConnected -> "● Connected directly to $contactName via Bluetooth"
+            hasBluetoothPeers -> "○ $contactName not directly in range — messages relayed through mesh"
+            nostrAvailable && !bluetoothAvailable -> "🌐 Connected via Internet relay (Bluetooth OFF)"
+            nostrAvailable -> "🌐 Connected via Internet relay"
+            else -> "○ $contactName not directly in range — messages relayed through mesh"
         }
     }
 
+    /**
+     * Send a text message with automatic fallback:
+     * 1. Try Bluetooth direct/mesh
+     * 2. If Bluetooth fails, use Nostr internet relay
+     * 3. If both fail, queue for later delivery
+     */
     private fun sendMessage() {
-        val text = inputEditText.text.toString().trim()
+        val text = inputEditText.text?.toString().orEmpty().trim()
         if (text.isEmpty()) return
-        inputEditText.text.clear()
+        inputEditText.text?.clear()
 
         if (contactPubkey.length != 66 || !contactPubkey.matches(Regex("^[a-fA-F0-9]{66}$"))) {
             Toast.makeText(this, "Invalid contact public key", Toast.LENGTH_SHORT).show()
@@ -448,55 +351,99 @@ class ChatActivity : AppCompatActivity() {
             return
         }
 
-        val mesh = MeshServiceHolder.current()
-        if (mesh == null) {
-            Toast.makeText(this, "Mesh service is not available", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val messageId = BlePacket.newPacketId()
         val recipientBytes = contactPubkey.hexToBytes()
-        val sent = mesh.sendMessage(contactPeerId, recipientBytes, text)
 
-        if (sent) {
-            val msg = ChatMessage(
-                text = text,
-                fromMe = true,
-                timestamp = System.currentTimeMillis(),
-                status = MessageStatus.SENT,
-                messageId = messageId
-            )
-            addMessage(msg)
-            pendingMessages[messageId] = messages.size - 1
-            Log.d(tag, "📤 Outgoing message ID $messageId added to pending at index ${messages.size - 1}")
-            lifecycleScope.launch {
-                db.messageDao().insert(
-                    MessageEntity(
-                        contactPubkey = contactPubkey,
-                        text = text,
-                        fromMe = true,
-                        timestamp = msg.timestamp,
-                        status = msg.status.ordinal,
-                        messageId = messageId
-                    )
+        try {
+            val packetId = MeshServiceHolder.sendMessage(contactPeerId, recipientBytes, text)
+
+            if (packetId != null) {
+                // Message was sent via Bluetooth OR Nostr
+                val msg = ChatMessage(
+                    text = text,
+                    fromMe = true,
+                    timestamp = System.currentTimeMillis(),
+                    status = MessageStatus.SENT,
+                    messageId = packetId
                 )
+                addMessage(msg)
+                pendingMessages[packetId] = messages.size - 1
+                Log.d(tag, "📤 Outgoing message ID $packetId added to pending at index ${messages.size - 1}")
+
+                // Save to database
+                lifecycleScope.launch {
+                    try {
+                        db.contactDao().insert(Contact(contactPubkey, contactName, System.currentTimeMillis()))
+
+                        db.messageDao().insert(
+                            MessageEntity(
+                                contactPubkey = contactPubkey,
+                                text = text,
+                                fromMe = true,
+                                timestamp = msg.timestamp,
+                                status = msg.status.ordinal,
+                                messageId = packetId
+                            )
+                        )
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to save sent message to DB", e)
+                        Toast.makeText(this@ChatActivity, "Message saved locally but not to database", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                // Both Bluetooth AND Nostr failed - queue for later
+                // ✅ Get sequence number NOW on main thread
+                val sequenceNumber = retryScheduler?.getNextSequence() ?: System.currentTimeMillis()
+
+                lifecycleScope.launch {
+                    try {
+                        // Insert the message without a packetId
+                        val entity = MessageEntity(
+                            contactPubkey = contactPubkey,
+                            text = text,
+                            fromMe = true,
+                            timestamp = System.currentTimeMillis(),
+                            status = MessageStatus.SENT.ordinal,
+                            messageId = null   // no packetId yet
+                        )
+                        // Insert and get the generated ID
+                        val dbMessageId = db.messageDao().insertAndGetId(entity)
+                        // Add to UI immediately (shows as SENT, will be updated later)
+                        val msg = ChatMessage(
+                            text = text,
+                            fromMe = true,
+                            timestamp = entity.timestamp,
+                            status = MessageStatus.SENT,
+                            messageId = null
+                        )
+                        addMessage(msg)
+                        // Enqueue with the DB ID and the pre‑retrieved sequenceNumber
+                        retryScheduler?.enqueueMessage(contactPeerId, text, dbMessageId, sequenceNumber)
+                        Toast.makeText(this@ChatActivity, "Message queued for later delivery", Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to queue message", e)
+                        Toast.makeText(this@ChatActivity, "Failed to save message: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
-        } else {
-            Toast.makeText(this, "No route to $contactName right now", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e(tag, "Send failed", e)
+            Toast.makeText(this, "Failed to send message", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // ----- Voice Recording & Sending (Updated UI) -----
+    // ----- Voice Recording & Sending -----
     private fun checkMicrophonePermissionAndRecord() {
-        // Check connection before opening the dialog
-        val mesh = MeshServiceHolder.current()
-        if (mesh == null || mesh.connectedPeerCount() == 0) {
-            Toast.makeText(this, "No peers connected. Please wait for a connection before recording.", Toast.LENGTH_LONG).show()
-            return
+        if (MeshServiceHolder.getConnectedPeerCount() == 0) {
+            // Check if Nostr is available as fallback
+            if (MeshServiceHolder.isNostrAvailable()) {
+                Toast.makeText(this, "No Bluetooth peers, but voice messages can be sent via Internet relay", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "No peers connected. Please wait for a connection before recording.", Toast.LENGTH_LONG).show()
+                return
+            }
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             showVoiceRecordingDialog()
         } else {
             requestRecordPermission.launch(Manifest.permission.RECORD_AUDIO)
@@ -504,60 +451,27 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun showVoiceRecordingDialog() {
-        val dialogView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-            gravity = Gravity.CENTER
-        }
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_voice_recording, null)
+        val statusText = dialogView.findViewById<TextView>(R.id.statusText)
+        val recordButton = dialogView.findViewById<ImageView>(R.id.recordButton)
+        val cancelButton = dialogView.findViewById<TextView>(R.id.cancelButton)
 
-        val statusText = TextView(this).apply {
-            text = "Tap 🎤 to start recording"
-            textSize = 18f
-            setTextColor(Color.rgb(255, 165, 0))
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
-        }
-        dialogView.addView(statusText)
-
-        // store reference so we can reset it later
         voiceStatusText = statusText
 
-        val recordButton = Button(this).apply {
-            text = "🎤"
-            textSize = 48f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.DKGRAY)
-            val drawable = GradientDrawable().apply {
-                setColor(Color.DKGRAY)
-                setStroke(2, Color.rgb(255, 165, 0))
-                setCornerRadius(100f)
-            }
-            background = drawable
-            layoutParams = LinearLayout.LayoutParams(120, 120).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            }
-            setOnClickListener {
-                if (!isRecording) {
-                    startRecording(statusText, this)
-                } else {
-                    stopRecording(this)
-                }
+        recordButton.setOnClickListener {
+            if (!voiceRecorder.isRecording) {
+                startRecording(statusText, recordButton)
+            } else {
+                stopRecording(recordButton)
             }
         }
-        dialogView.addView(recordButton)
 
-        val cancelButton = Button(this).apply {
-            text = "Cancel"
-            setTextColor(Color.GRAY)
-            setBackgroundColor(Color.TRANSPARENT)
-            setOnClickListener {
-                if (isRecording) {
-                    stopRecording(recordButton, false)
-                }
-                voiceDialog?.dismiss()
+        cancelButton.setOnClickListener {
+            if (voiceRecorder.isRecording) {
+                stopRecording(recordButton, false)
             }
+            voiceDialog?.dismiss()
         }
-        dialogView.addView(cancelButton)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Voice Message")
@@ -568,230 +482,129 @@ class ChatActivity : AppCompatActivity() {
         voiceDialog = dialog
 
         dialog.setOnDismissListener {
-            if (isRecording) {
-                try {
-                    mediaRecorder?.apply {
-                        stop()
-                        release()
-                    }
-                    mediaRecorder = null
-                    isRecording = false
-                    recordingFile?.delete()
-                    recordingFile = null
-                } catch (_: Exception) {}
-                timerUpdateRunnable?.let { handler.removeCallbacks(it) }
-                timerUpdateRunnable = null
+            if (voiceRecorder.isRecording) {
+                voiceRecorder.cancelRecording()
             }
             voiceDialog = null
             voiceStatusText = null
         }
 
         dialog.show()
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.visibility = View.GONE
     }
 
-    private fun startRecording(statusText: TextView, button: Button) {
-        try {
-            val file = File(cacheDir, "voice_${System.currentTimeMillis()}.3gp")
-            recordingFile = file
+    private fun startRecording(statusText: TextView, button: View) {
+        val file = voiceRecorder.startRecording()
+        if (file == null) {
+            Toast.makeText(this, "Failed to start recording", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-            // Reduced audio quality → smaller file, faster send
-            mediaRecorder = MediaRecorder().apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(8000)          // was 16000 → half the size
-                setAudioEncodingBitRate(32000)      // was 64000 → half the size
-                setOutputFile(file.absolutePath)
-                prepare()
-                start()
-            }
+        statusText.text = "🔴 Recording 00:00"
+        button.setBackgroundResource(R.drawable.ic_stop)
 
-            isRecording = true
-            recordingStartTime = System.currentTimeMillis()
-            statusText.text = "🔴 Recording 00:00"
-            button.text = "⏹"
-            button.setTextColor(Color.RED)
-            button.setBackgroundColor(Color.DKGRAY)
-
-            // Timer updates every second
-            timerUpdateRunnable = object : Runnable {
-                override fun run() {
-                    if (isRecording) {
-                        val elapsed = (System.currentTimeMillis() - recordingStartTime) / 1000
-                        val seconds = elapsed % 60
-                        val minutes = elapsed / 60
-                        statusText.text = "🔴 Recording ${String.format(Locale.US, "%02d:%02d", minutes, seconds)}"
-                        handler.postDelayed(this, 1000)
-                    }
+        val startTime = System.currentTimeMillis()
+        timerUpdateRunnable = object : Runnable {
+            override fun run() {
+                if (voiceRecorder.isRecording) {
+                    val elapsed = (System.currentTimeMillis() - startTime) / 1000
+                    val seconds = elapsed % 60
+                    val minutes = elapsed / 60
+                    statusText.text = "🔴 Recording ${String.format(Locale.US, "%02d:%02d", minutes, seconds)}"
+                    handler.postDelayed(this, 1000)
                 }
             }
-            handler.post(timerUpdateRunnable!!)
-
-        } catch (e: Exception) {
-            Log.e(tag, "Recording start failed", e)
-            Toast.makeText(this, "Failed to start recording", Toast.LENGTH_SHORT).show()
         }
+        handler.post(timerUpdateRunnable!!)
     }
 
-    private fun stopRecording(button: Button, send: Boolean = true) {
-        if (!isRecording) return
+    // =============== UPDATED stopRecording ===============
+    private fun stopRecording(button: View, send: Boolean = true) {
+        val (file, duration) = voiceRecorder.stopRecording()
+        timerUpdateRunnable?.let { handler.removeCallbacks(it) }
+        timerUpdateRunnable = null
 
-        try {
-            mediaRecorder?.apply {
-                stop()
-                release()
-            }
-            mediaRecorder = null
-            isRecording = false
-            timerUpdateRunnable?.let { handler.removeCallbacks(it) }
-            timerUpdateRunnable = null
+        voiceStatusText?.text = "Tap 🎤 to start recording"
+        button.setBackgroundResource(R.drawable.ic_mic)
 
-            val file = recordingFile
-            recordingFile = null
+        if (send && file != null && file.exists() && file.length() > 0) {
+            // 1. Create the message object and add it to the UI immediately
+            val msg = ChatMessage(
+                text = "[Voice Message]",
+                fromMe = true,
+                timestamp = System.currentTimeMillis(),
+                status = MessageStatus.SENT,
+                messageId = null,
+                type = 1,
+                voiceDuration = duration,
+                voiceFilePath = file.absolutePath
+            )
+            addMessage(msg)
 
-            val duration = if (file != null && file.exists() && file.length() > 0) {
-                (System.currentTimeMillis() - recordingStartTime) / 1000
-            } else 0L
+            // ✅ Get sequence number NOW on main thread before coroutine
+            val sequenceNumber = retryScheduler?.getNextSequence() ?: System.currentTimeMillis()
 
-            // Reset the timer text
-            voiceStatusText?.text = "Tap 🎤 to start recording"
+            // 2. Insert into database and get the row ID
+            lifecycleScope.launch {
+                try {
+                    val entity = MessageEntity(
+                        contactPubkey = contactPubkey,
+                        text = "[Voice Message]",
+                        fromMe = true,
+                        timestamp = msg.timestamp,
+                        status = msg.status.ordinal,
+                        messageId = null,
+                        type = 1,
+                        voiceDuration = duration,
+                        voiceFilePath = file.absolutePath
+                    )
+                    val dbMessageId = db.messageDao().insertAndGetId(entity)
 
-            if (send && file != null && file.exists() && file.length() > 0) {
-                // Try to send, retry once if it fails
-                var success = sendVoiceMessage(file, duration)
-                if (!success) {
-                    // Retry after 1 second
-                    Toast.makeText(this, "Retrying send...", Toast.LENGTH_SHORT).show()
-                    handler.postDelayed({
-                        val retrySuccess = sendVoiceMessage(file, duration)
-                        if (retrySuccess) {
-                            Toast.makeText(this, "Voice message sent (retry)", Toast.LENGTH_SHORT).show()
-                            voiceDialog?.dismiss()
-                        } else {
-                            Toast.makeText(this, "Still no connection. Please try again.", Toast.LENGTH_LONG).show()
-                            button.text = "🎤"
-                            button.setTextColor(Color.WHITE)
-                            file.delete()
+                    // 3. Attempt to send the voice message, passing the DB ID and sequence number
+                    val packetId = voiceSender.sendVoiceMessage(
+                        file = file,
+                        duration = duration,
+                        recipientPeerId = contactPeerId,
+                        recipientPubkey = contactPubkey.hexToBytes(),
+                        dbMessageId = dbMessageId,
+                        sequenceNumber = sequenceNumber
+                    )
+
+                    if (packetId != null) {
+                        // Sent immediately – update the DB record with the packetId
+                        db.messageDao().updatePacketId(dbMessageId, packetId)
+                        // Also update the local message's messageId so that ACKs can be tracked
+                        val lastIndex = messages.size - 1
+                        if (lastIndex >= 0 && messages[lastIndex].timestamp == msg.timestamp) {
+                            messages[lastIndex] = messages[lastIndex].copy(messageId = packetId)
+                            messageAdapter.notifyItemChanged(lastIndex)
+                            pendingMessages[packetId] = lastIndex
                         }
-                    }, 1000)
-                } else {
-                    Toast.makeText(this, "Voice message sent", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@ChatActivity, "Voice message sent", Toast.LENGTH_SHORT).show()
+                    } else {
+                        // Sending failed – it has been queued via the outbox (thanks to dbMessageId and sequenceNumber)
+                        Toast.makeText(this@ChatActivity, "Voice message queued for later", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e(tag, "Failed to process voice message", e)
+                    Toast.makeText(this@ChatActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                } finally {
                     voiceDialog?.dismiss()
                 }
-            } else {
-                if (file != null && file.exists()) {
-                    file.delete()
-                    Toast.makeText(this, "Recording cancelled", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "Recording empty, not sent", Toast.LENGTH_SHORT).show()
-                }
-                button.text = "🎤"
-                button.setTextColor(Color.WHITE)
             }
-        } catch (e: Exception) {
-            Log.e(tag, "Stop recording failed", e)
-            Toast.makeText(this, "Error stopping recording", Toast.LENGTH_SHORT).show()
+        } else {
+            if (file != null && file.exists()) file.delete()
+            Toast.makeText(this, if (file != null && file.exists()) "Recording cancelled" else "Recording empty, not sent", Toast.LENGTH_SHORT).show()
         }
     }
+    // =============== End of updated stopRecording ===============
 
-    private fun sendVoiceMessage(file: File, duration: Long): Boolean {
-        try {
-            val audioBytes = file.readBytes()
-            val audioBase64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
-
-            Log.d(tag, "📤 Voice message size: ${audioBytes.size} bytes, duration: ${duration}s")
-
-            val payloadJson = JSONObject().apply {
-                put("type", "voice")
-                put("audio", audioBase64)
-                put("duration", duration)
-            }
-            val payload = payloadJson.toString()
-
-            val mesh = MeshServiceHolder.current()
-            if (mesh == null) {
-                Toast.makeText(this, "Mesh not available", Toast.LENGTH_SHORT).show()
-                return false
-            }
-            // Check if there are any connected peers
-            if (mesh.connectedPeerCount() == 0) {
-                Toast.makeText(this, "No peers connected. Please try again later.", Toast.LENGTH_LONG).show()
-                return false
-            }
-
-            val messageId = BlePacket.newPacketId()
-            val recipientBytes = contactPubkey.hexToBytes()
-            val sent = mesh.sendMessage(contactPeerId, recipientBytes, payload)
-
-            if (sent) {
-                val msg = ChatMessage(
-                    text = "[Voice Message]",
-                    fromMe = true,
-                    timestamp = System.currentTimeMillis(),
-                    status = MessageStatus.SENT,
-                    messageId = messageId,
-                    type = 1,
-                    voiceDuration = duration,
-                    voiceFilePath = file.absolutePath
-                )
-                addMessage(msg)
-                pendingMessages[messageId] = messages.size - 1
-                lifecycleScope.launch {
-                    db.messageDao().insert(
-                        MessageEntity(
-                            contactPubkey = contactPubkey,
-                            text = msg.text,
-                            fromMe = true,
-                            timestamp = msg.timestamp,
-                            status = msg.status.ordinal,
-                            messageId = messageId,
-                            type = msg.type,
-                            voiceDuration = msg.voiceDuration,
-                            voiceFilePath = msg.voiceFilePath
-                        )
-                    )
-                }
-                return true
-            } else {
-                Toast.makeText(this, "Failed to send voice message", Toast.LENGTH_SHORT).show()
-                return false
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "sendVoiceMessage failed", e)
-            Toast.makeText(this, "Failed to send voice: ${e.message}", Toast.LENGTH_SHORT).show()
-            return false
-        }
+    // ----- UI Helpers -----
+    private fun addMessage(msg: ChatMessage) {
+        messages.add(msg)
+        messageAdapter.notifyItemInserted(messages.size - 1)
+        recyclerView.scrollToPosition(messages.size - 1)
     }
 
-    // ----- Helper: Save received audio file -----
-    private fun saveAudioFile(bytes: ByteArray): File {
-        val file = File(cacheDir, "voice_${System.currentTimeMillis()}.3gp")
-        file.outputStream().use { it.write(bytes) }
-        Log.d(tag, "💾 Audio saved: ${file.absolutePath}, size=${file.length()}")
-        return file
-    }
-
-    // ----- Play Voice Message -----
-    private fun playAudio(filePath: String) {
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(filePath)
-                prepare()
-                start()
-                setOnCompletionListener {
-                    release()
-                    mediaPlayer = null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Play failed", e)
-            Toast.makeText(this, "Failed to play voice", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // ----- Multi-Select Deletion -----
     private fun deleteSelectedMessages() {
         val positions = messageAdapter.getSelectedPositions().sortedDescending()
         val idsToDelete = positions.map { messages[it].id }
@@ -812,159 +625,101 @@ class ChatActivity : AppCompatActivity() {
         actionMode?.finish()
     }
 
-    // ----- UI Helpers -----
-    private fun addMessage(msg: ChatMessage) {
-        messages.add(msg)
-        messageAdapter.notifyItemInserted(messages.size - 1)
-        recyclerView.scrollToPosition(messages.size - 1)
+    // ----- Playback -----
+    private fun playAudio(filePath: String) {
+        voicePlayer.play(filePath)
     }
 
-    private fun showDeleteDialog(position: Int) {
-        val msg = messages[position]
-        AlertDialog.Builder(this)
-            .setTitle("Delete message")
-            .setMessage("Delete this message?")
-            .setPositiveButton("Delete") { _, _ ->
-                messages.removeAt(position)
-                messageAdapter.notifyItemRemoved(position)
-                lifecycleScope.launch {
-                    db.messageDao().delete(msg.id)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
+    // ----- MessageAdapter with two view types -----
+    inner class MessageAdapter :
+        RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() {
 
-    data class ChatMessage(
-        val id: Long = 0,
-        val text: String,
-        val fromMe: Boolean,
-        val timestamp: Long,
-        val status: MessageStatus = MessageStatus.SENT,
-        val messageId: String = "",
-        val type: Int = 0,
-        val voiceDuration: Long = 0,
-        val voiceFilePath: String = ""
-    )
+        private val viewTypeIncoming = 0
+        private val viewTypeOutgoing = 1
 
-    enum class MessageStatus {
-        SENT, DELIVERED, READ
-    }
-
-    inner class MessageAdapter(
-        private val items: List<ChatMessage>,
-        private val contactName: String,
-        @Suppress("unused") private val onDelete: (Int) -> Unit
-    ) : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() {
-
-        private val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
         private val selectedPositions = mutableSetOf<Int>()
 
         fun toggleSelection(position: Int) {
-            if (selectedPositions.contains(position)) {
-                selectedPositions.remove(position)
-            } else {
-                selectedPositions.add(position)
-            }
+            if (selectedPositions.contains(position)) selectedPositions.remove(position)
+            else selectedPositions.add(position)
             notifyItemChanged(position)
         }
 
         fun getSelectedPositions(): Set<Int> = selectedPositions
 
+        @Suppress("NotifyDataSetChanged")
         fun clearSelection() {
             selectedPositions.clear()
             notifyDataSetChanged()
         }
 
+        override fun getItemViewType(position: Int): Int {
+            return if (messages[position].fromMe) viewTypeOutgoing else viewTypeIncoming
+        }
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
-            val container = LinearLayout(parent.context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = RecyclerView.LayoutParams(
-                    RecyclerView.LayoutParams.MATCH_PARENT,
-                    RecyclerView.LayoutParams.WRAP_CONTENT
-                )
-                setPadding(4, 4, 4, 4)
+            val layout = if (viewType == viewTypeOutgoing) {
+                R.layout.item_message_outgoing
+            } else {
+                R.layout.item_message_incoming
             }
-            val textView = TextView(parent.context).apply {
-                setPadding(24, 16, 24, 16)
-                textSize = 16f
-                setTextColor(Color.rgb(255, 165, 0))
-                val drawable = GradientDrawable().apply {
-                    setColor(Color.DKGRAY)
-                    setStroke(2, Color.rgb(255, 165, 0))
-                    setCornerRadius(8f)
-                }
-                background = drawable
-
-                // Limit width to 80% of screen
-                val displayMetrics = parent.context.resources.displayMetrics
-                val screenWidth = displayMetrics.widthPixels
-                val maxWidth = (screenWidth * 0.8).toInt()
-                this.maxWidth = maxWidth
-
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                isLongClickable = true
-            }
-            container.addView(textView)
-            return MessageViewHolder(container, textView)
+            val view = LayoutInflater.from(parent.context).inflate(layout, parent, false)
+            return MessageViewHolder(view)
         }
 
         override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
-            val msg = items[position]
-            val time = dateFormat.format(Date(msg.timestamp))
+            val msg = messages[position]
 
-            val prefix = if (msg.fromMe) "Me" else contactName
-            val statusIcon = when (msg.status) {
+            // ✅ Use SpannableString to color the status ticks
+            val statusSymbol = when (msg.status) {
                 MessageStatus.SENT -> " ✓"
                 MessageStatus.DELIVERED -> " ✓✓"
                 MessageStatus.READ -> " ✓✓"
             }
 
-            val displayText = if (msg.type == 1) {
-                "🎵 $prefix ($time): Voice Message (${msg.voiceDuration}s)$statusIcon"
+            val statusColor = when (msg.status) {
+                MessageStatus.SENT -> Color.GRAY
+                MessageStatus.DELIVERED -> Color.BLUE
+                MessageStatus.READ -> Color.GREEN
+            }
+
+            val baseText = if (msg.type == 1) {
+                "🎵 Voice Message (${msg.voiceDuration}s)"
             } else {
-                "$prefix ($time): ${msg.text}$statusIcon"
+                msg.text
             }
 
-            holder.textView.text = displayText
+            val fullText = "$baseText$statusSymbol"
+            val spannable = android.text.SpannableString(fullText)
 
-            when {
-                msg.fromMe && msg.status == MessageStatus.READ -> {
-                    holder.textView.setTextColor(Color.rgb(255, 165, 0))
-                }
-                msg.fromMe && msg.status == MessageStatus.DELIVERED -> {
-                    holder.textView.setTextColor(Color.rgb(255, 165, 0))
-                }
-                msg.fromMe && msg.status == MessageStatus.SENT -> {
-                    holder.textView.setTextColor(Color.WHITE)
-                }
-                else -> {
-                    holder.textView.setTextColor(Color.rgb(255, 165, 0))
-                }
-            }
+            val start = fullText.length - statusSymbol.length
+            val end = fullText.length
+            spannable.setSpan(
+                android.text.style.ForegroundColorSpan(statusColor),
+                start, end,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
 
-            holder.container.gravity = if (msg.fromMe) Gravity.END else Gravity.START
+            holder.messageText.text = spannable
 
+            // Selection highlight
             val isSelected = selectedPositions.contains(position)
-            holder.container.setBackgroundColor(
+            holder.itemView.isSelected = isSelected
+            holder.itemView.setBackgroundColor(
                 if (isSelected) Color.argb(80, 255, 165, 0) else Color.TRANSPARENT
             )
 
-            holder.container.setOnClickListener {
+            // Click listeners
+            holder.itemView.setOnClickListener {
                 if (multiSelectMode) {
                     toggleSelection(position)
                     actionMode?.title = "${selectedPositions.size} selected"
                 } else {
-                    if (msg.type == 1) {
-                        playAudio(msg.voiceFilePath)
-                    }
+                    if (msg.type == 1) playAudio(msg.voiceFilePath)
                 }
             }
 
-            holder.textView.setOnLongClickListener {
+            holder.itemView.setOnLongClickListener {
                 if (!multiSelectMode) {
                     multiSelectMode = true
                     toggleSelection(position)
@@ -978,11 +733,27 @@ class ChatActivity : AppCompatActivity() {
             }
         }
 
-        override fun getItemCount(): Int = items.size
+        override fun getItemCount(): Int = messages.size
 
-        inner class MessageViewHolder(
-            val container: LinearLayout,
-            val textView: TextView
-        ) : RecyclerView.ViewHolder(container)
+        inner class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val messageText: TextView = itemView.findViewById(R.id.messageText)
+        }
+    }
+
+    // ----- Data classes -----
+    data class ChatMessage(
+        val id: Long = 0,
+        val text: String,
+        val fromMe: Boolean,
+        val timestamp: Long,
+        val status: MessageStatus = MessageStatus.SENT,
+        val messageId: String? = null,
+        val type: Int = 0,
+        val voiceDuration: Long = 0,
+        val voiceFilePath: String = ""
+    )
+
+    enum class MessageStatus {
+        SENT, DELIVERED, READ
     }
 }

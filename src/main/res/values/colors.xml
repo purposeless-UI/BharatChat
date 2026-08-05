@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Theme Base -->
+    <color name="background">#121212</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="surfaceVariant">#2D2D2D</color>
+
+    <!-- Brand Accent -->
+    <color name="primary">#FFA500</color>
+    <color name="onPrimary">#121212</color>
+    <color name="primaryContainer">#332200</color>
+
+    <!-- Text Colors -->
+    <color name="onBackground">#FFFFFF</color>
+    <color name="onSurface">#E0E0E0</color>
+    <color name="onSurfaceVariant">#9E9E9E</color>
+
+    <!-- Message Bubbles -->
+    <color name="bubbleOutgoing">#FFA500</color>
+    <color name="bubbleIncoming">#2196F3</color>
+
+    <!-- InPut-Message -->
+    <color name="inputTextColor">#FFA500</color>
+    <color name="inputHintColor">#CC8800</color>
+
+    <!-- Status -->
+    <color name="online">#4CAF50</color>
+</resources>

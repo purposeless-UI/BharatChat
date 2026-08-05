@@ -3,16 +3,13 @@ package com.droid
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
-import android.view.Gravity
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,28 +18,26 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.droid.ble.BlePermissions
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.seconds
 
-@Suppress(
-    "SetTextI18n",
-    "SameParameterValue",
-    "SpellCheckingInspection",
-    "UseSetterMethod",
-    "KTX",
-    "Deprecation"
-)
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var listContainer: LinearLayout
+    private lateinit var contactAdapter: ContactAdapter
     private lateinit var meshStatusTextView: TextView
     private val tag = "MainActivity"
-    private lateinit var db: AppDatabase   // ✅ Added for database operations
+    private lateinit var db: AppDatabase
 
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -61,60 +56,30 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
         IdentityStore.loadOrCreate(this)
-        db = AppDatabase.getInstance(this)   // ✅ Initialize database
+        db = AppDatabase.getInstance(this)
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 48, 32, 32)
-            setBackgroundColor(Color.DKGRAY)
+        // Toolbar
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        supportActionBar?.title = "BharatChat"
+
+        // Status text
+        meshStatusTextView = findViewById(R.id.statusTextView)
+
+        // RecyclerView
+        val recyclerView = findViewById<RecyclerView>(R.id.contactRecyclerView)
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        contactAdapter = ContactAdapter(emptyList())
+        recyclerView.adapter = contactAdapter
+
+        // FAB
+        val fab = findViewById<FloatingActionButton>(R.id.fabPair)
+        fab.setOnClickListener {
+            startActivity(Intent(this, PairingActivity::class.java))
         }
-
-        meshStatusTextView = TextView(this).apply {
-            text = "Mesh: initialising…"
-            textSize = 14f
-            setPadding(0, 0, 0, 16)
-            setTextColor(Color.rgb(255, 165, 0))
-        }
-        root.addView(meshStatusTextView)
-
-        root.addView(TextView(this).apply {
-            text = "► BharatChat"
-            textSize = 26f
-            setPadding(0, 0, 0, 24)
-            setTextColor(Color.rgb(255, 165, 0))
-            setTypeface(null, android.graphics.Typeface.BOLD)
-        })
-
-        val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-        listContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.DKGRAY)
-        }
-        scroll.addView(listContainer)
-        root.addView(scroll)
-
-        root.addView(Button(this).apply {
-            text = "+ PAIR CONTACT"
-            setTextColor(Color.rgb(255, 165, 0))
-            setBackgroundColor(Color.DKGRAY)
-            val drawable = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.DKGRAY)
-                setStroke(2, Color.rgb(255, 165, 0))
-                setCornerRadius(8f)
-            }
-            background = drawable
-            setOnClickListener { startActivity(Intent(this@MainActivity, PairingActivity::class.java)) }
-        })
-
-        setContentView(root)
 
         requestBlePermissionsThenStart()
     }
@@ -130,7 +95,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // polling coroutine will be cancelled automatically by lifecycleScope
+        // polling coroutine will be canceled automatically by lifecycleScope
     }
 
     private fun checkAllPermissionsGranted(): Boolean {
@@ -174,62 +139,54 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderContacts() {
         lifecycleScope.launch {
-            val contacts = withContext(Dispatchers.IO) {
-                try {
-                    ContactsStore.list(this@MainActivity)
-                } catch (e: Exception) {
-                    Log.e(tag, "Error loading contacts", e)
-                    emptyList()
-                }
+            db.contactDao().getAllContacts().collect { contacts ->
+                contactAdapter.updateContacts(contacts)
             }
-            updateContactList(contacts)
         }
     }
 
-    private fun updateContactList(contacts: List<Contact>) {
-        listContainer.removeAllViews()
-        if (contacts.isEmpty()) {
-            listContainer.addView(TextView(this).apply {
-                text = "╰┈➤ No contacts yet.\nPair with someone to start."
-                gravity = Gravity.CENTER
-                setPadding(0, 48, 0, 0)
-                setTextColor(Color.rgb(255, 165, 0))
-            })
-            return
-        }
-        contacts.sortedByDescending { it.addedAt }.forEach { contact ->
-            val row = TextView(this).apply {
-                text = "${contact.name}\n${contact.xOnlyPubkeyHex.take(12)}..."
-                textSize = 16f
-                setPadding(16, 24, 16, 24)
-                setTextColor(Color.rgb(255, 165, 0))
-                setBackgroundColor(Color.DKGRAY)
-                setOnClickListener {
-                    val intent = Intent(this@MainActivity, ChatActivity::class.java)
-                    intent.putExtra("contactPubkey", contact.pubkeyHex)
-                    intent.putExtra("contactName", contact.name)
-                    startActivity(intent)
-                }
-                // ✅ Long‑click now shows options (Rename / Delete Contact)
-                setOnLongClickListener {
-                    showContactOptionsDialog(contact)
-                    true
-                }
-            }
-            listContainer.addView(row)
+    // ----- Contact Adapter (inner class) -----
+    inner class ContactAdapter(private var contacts: List<Contact>) :
+        RecyclerView.Adapter<ContactAdapter.ContactViewHolder>() {
 
-            val divider = android.view.View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    1
-                )
-                setBackgroundColor(Color.rgb(255, 165, 0))
+        @Suppress("NotifyDataSetChanged")
+        fun updateContacts(newContacts: List<Contact>) {
+            contacts = newContacts.sortedByDescending { it.addedAt }
+            notifyDataSetChanged()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ContactViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_contact, parent, false)
+            return ContactViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ContactViewHolder, position: Int) {
+            val contact = contacts[position]
+            holder.nameTextView.text = contact.name
+            holder.subtitleTextView.text = contact.xOnlyPubkeyHex.take(12) + "…"
+
+            holder.itemView.setOnClickListener {
+                val intent = Intent(this@MainActivity, ChatActivity::class.java)
+                intent.putExtra("contactPubkey", contact.pubkey)
+                intent.putExtra("contactName", contact.name)
+                startActivity(intent)
             }
-            listContainer.addView(divider)
+            holder.itemView.setOnLongClickListener {
+                showContactOptionsDialog(contact)
+                true
+            }
+        }
+
+        override fun getItemCount(): Int = contacts.size
+
+        inner class ContactViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val nameTextView: TextView = itemView.findViewById(R.id.contactName)
+            val subtitleTextView: TextView = itemView.findViewById(R.id.contactSubtitle)
         }
     }
 
-    // ✅ New: Contact options (Rename / Delete)
+    // ----- Contact options (rename / delete) -----
     private fun showContactOptionsDialog(contact: Contact) {
         val options = arrayOf("Rename", "Delete Contact")
         AlertDialog.Builder(this)
@@ -243,11 +200,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // ✅ Existing rename dialog (unchanged)
     private fun showRenameDialog(contact: Contact) {
-        val editText = EditText(this).apply {
-            setText(contact.name)
-        }
+        val editText = TextInputEditText(this)
+        editText.setText(contact.name)
         AlertDialog.Builder(this)
             .setTitle("Rename contact")
             .setView(editText)
@@ -256,8 +211,8 @@ class MainActivity : AppCompatActivity() {
                 if (newName.isNotEmpty()) {
                     lifecycleScope.launch {
                         try {
-                            ContactsStore.rename(this@MainActivity, contact.pubkeyHex, newName)
-                            renderContacts() // refresh the list
+                            db.contactDao().rename(contact.pubkey, newName)
+                            renderContacts()
                         } catch (e: Exception) {
                             Log.e(tag, "Rename failed", e)
                             Toast.makeText(this@MainActivity, "Failed to rename", Toast.LENGTH_SHORT).show()
@@ -269,7 +224,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // ✅ New: Delete contact and all chat history
     private fun confirmDeleteContact(contact: Contact) {
         AlertDialog.Builder(this)
             .setTitle("Delete ${contact.name}?")
@@ -277,11 +231,8 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Delete") { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        // 1. Remove from ContactsStore
-                        ContactsStore.remove(this@MainActivity, contact.pubkeyHex)
-                        // 2. Delete all messages for this contact
-                        db.messageDao().deleteAllForContact(contact.pubkeyHex)
-                        // 3. Refresh the list
+                        db.contactDao().delete(contact.pubkey)
+                        db.messageDao().deleteAllForContact(contact.pubkey)
                         renderContacts()
                         Toast.makeText(this@MainActivity, "Contact deleted", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
@@ -303,21 +254,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Suppress("SetTextI18n")
     private fun updateMeshStatus() {
-        val manager = MeshServiceHolder.current()
-        val status = if (manager != null) {
-            try {
-                if (manager.isRunning()) {
-                    val peerCount = manager.connectedPeerCount()
-                    "Mesh: Running  ●  $peerCount peer${if (peerCount != 1) "s" else ""} connected"
+        val bluetoothAvailable = MeshServiceHolder.isBluetoothAvailable()
+        val nostrAvailable = MeshServiceHolder.isNostrAvailable()
+        val peerCount = MeshServiceHolder.getConnectedPeerCount()
+
+        val status = when {
+            // Bluetooth is running and has peers connected
+            bluetoothAvailable && peerCount > 0 -> {
+                if (nostrAvailable) {
+                    "🔷 Mesh + Internet relay • $peerCount peer${if (peerCount != 1) "s" else ""} connected"
                 } else {
-                    "Mesh: Not running (isRunning false)"
+                    "🔷 Mesh: Running • $peerCount peer${if (peerCount != 1) "s" else ""} connected"
                 }
-            } catch (_: Exception) {
-                "Mesh: Error"
             }
-        } else {
-            "Mesh: Not running (manager null)"
+            // Nostr-only mode (Bluetooth OFF, but Nostr working)
+            nostrAvailable && !bluetoothAvailable -> {
+                "🌐 Internet relay active (Bluetooth OFF)"
+            }
+            // Nothing running
+            else -> {
+                "Mesh: Not running"
+            }
         }
         meshStatusTextView.text = status
     }
