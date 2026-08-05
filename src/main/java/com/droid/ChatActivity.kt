@@ -30,6 +30,7 @@ import com.droid.ble.peerIdFromPubkey
 import com.droid.crypto.Secp256k1Signer
 import com.droid.crypto.hexToBytes
 import com.droid.storage.OutboxRetryScheduler
+import com.droid.utils.MessageTimestampFormatter
 import com.droid.voice.VoiceMessageSender
 import com.droid.voice.VoicePlayer
 import com.droid.voice.VoiceRecorder
@@ -702,6 +703,9 @@ class ChatActivity : AppCompatActivity() {
 
             holder.messageText.text = spannable
 
+            // ✅ Set timestamp (date, time, year)
+            holder.messageTime.text = MessageTimestampFormatter.formatFullTimestamp(msg.timestamp)
+
             // Selection highlight
             val isSelected = selectedPositions.contains(position)
             holder.itemView.isSelected = isSelected
@@ -737,6 +741,7 @@ class ChatActivity : AppCompatActivity() {
 
         inner class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             val messageText: TextView = itemView.findViewById(R.id.messageText)
+            val messageTime: TextView = itemView.findViewById(R.id.messageTime)   // ✅ added
         }
     }
 
