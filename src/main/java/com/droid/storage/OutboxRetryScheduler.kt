@@ -105,11 +105,11 @@ class OutboxRetryScheduler(
         }
 
         try {
-            // ✅ Sort by sequenceNumber (absolute FIFO), then timestamp as fallback
+            // ✅ Sort by dbMessageId (guaranteed FIFO), then timestamp, then sequenceNumber
             val pending = outbox.getAll().sortedWith(
-                compareBy<OutboxEntry> { it.sequenceNumber }
+                compareBy<OutboxEntry> { it.dbMessageId }
                     .thenBy { it.timestamp }
-                    .thenBy { it.dbMessageId }
+                    .thenBy { it.sequenceNumber }
             )
             if (pending.isEmpty()) return
 
@@ -126,7 +126,7 @@ class OutboxRetryScheduler(
                 val packetId = MeshServiceHolder.sendMessage(entry.recipientId, pubkey, entry.plainText)
 
                 if (packetId != null) {
-                    Log.d(TAG, "✅ Outbox message ${entry.messageId} sent via Bluetooth or Nostr, packetId=$packetId")
+                    Log.d(TAG, "✅ Outbox message ${entry.messageId} sent via Bluetooth or ,Nostr, packetId=$packetId")
                     // Update the database with the packetId so ACKs can be processed
                     try {
                         db.messageDao().updatePacketId(entry.dbMessageId, packetId)
